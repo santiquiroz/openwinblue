@@ -2,8 +2,31 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <StackPanel Margin="16">
-        <TextBlock Text="HFP &amp; AI Controls" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
-        <TextBlock Text="HFP switching prevention and AI enhancement toggles — Phase 4b."
-                   Foreground="#666" FontStyle="Italic"/>
+        <TextBlock Text="HFP &amp; AI Controls" FontWeight="Bold" FontSize="13" Margin="0,0,0,12"/>
+
+        <!-- HFP Guard -->
+        <TextBlock Text="HFP Guard" FontWeight="SemiBold" Margin="0,0,0,6"/>
+        <CheckBox Content="Prevent automatic HFP switching (keep A2DP stereo active)"
+                  IsChecked="{Binding HfpGuardEnabled, Mode=TwoWay}"
+                  Margin="0,0,0,4"/>
+        <TextBlock Text="{Binding HfpGuardNote}"
+                   Foreground="#666" FontSize="11" TextWrapping="Wrap"
+                   Margin="0,0,0,16"/>
+
+        <!-- AI Enhancement -->
+        <TextBlock Text="AI Audio Enhancement" FontWeight="SemiBold" Margin="0,0,0,6"/>
+        <TextBlock Text="Requires ONNX Runtime + DirectML (any DX12 GPU). Coming in Phase 6."
+                   Foreground="#888" FontSize="11" Margin="0,0,0,8"/>
+        <CheckBox Content="AI Noise Reduction (DeepFilterNet3)"
+                  IsChecked="{Binding NoiseReduction, Mode=TwoWay}"
+                  IsEnabled="False"
+                  Margin="0,0,0,4"/>
+        <CheckBox Content="Psychoacoustic Pre-Emphasis (Phase 6)"
+                  IsEnabled="False"
+                  Margin="0,0,0,4"/>
+        <CheckBox Content="Smart Adaptive Bitrate (Phase 6)"
+                  IsChecked="{Binding AdaptiveBitrate, Mode=TwoWay}"
+                  IsEnabled="False"
+                  Margin="0,0,0,4"/>
     </StackPanel>
 </UserControl>
