@@ -79,13 +79,14 @@
     <ClInclude Include="owb_ioctl.h" />
   </ItemGroup>
 
+  <!-- INF excluded from project build: InfVerif.dll is absent from the chocolatey WDK
+       package used in CI. The INF is deployed via the installer (Phase 4).
+       To validate the INF locally: run InfVerif.exe manually from a full WDK install. -->
+  <!--
   <ItemGroup>
-    <!-- RunInfVerifier=false: InfVerif.dll is missing from the chocolatey WDK package.
-         Full INF validation runs locally once WDK is installed with the full installer. -->
-    <Inf Include="owb_a2dp.inf">
-      <RunInfVerifier>false</RunInfVerifier>
-    </Inf>
+    <Inf Include="owb_a2dp.inf" />
   </ItemGroup>
+  -->
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

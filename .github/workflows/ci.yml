@@ -78,7 +78,8 @@ jobs:
           & $msbuild driver\owb_a2dp.vcxproj `
             /p:Configuration=Debug `
             /p:Platform=x64 `
-            /p:RunInfVerifier=false `
+            /p:SignMode=Off `
+            /p:EnableInf2cat=false `
             /t:Build `
             /nologo
         shell: pwsh
