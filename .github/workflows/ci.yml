@@ -57,12 +57,14 @@ jobs:
       - name: Verify WDK kernel headers exist
         run: |
           $wdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+          # Look only in versioned subdirs (10.0.*), not 'wdf' or other non-version dirs
           $kmHeader = Get-ChildItem "$wdkRoot\Include" -Directory |
+                      Where-Object { $_.Name -match '^\d+\.\d+\.' } |
                       Sort-Object Name -Descending |
                       Select-Object -First 1 |
                       ForEach-Object { "$($_.FullName)\km\ntddk.h" }
-          if (-not (Test-Path $kmHeader)) {
-            Write-Error "WDK kernel headers not found at $kmHeader"
+          if (-not $kmHeader -or -not (Test-Path $kmHeader)) {
+            Write-Error "WDK kernel headers not found. Include dirs: $(Get-ChildItem "$wdkRoot\Include" -Directory | Select-Object -ExpandProperty Name)"
             exit 1
           }
           Write-Host "WDK OK: $kmHeader"
