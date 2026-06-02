@@ -9,7 +9,7 @@ namespace OpenWinBlue.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     public StatusViewModel   Status   { get; } = new();
-    public CodecViewModel    Codec    { get; } = new();
+    public CodecViewModel    Codec    { get; }
     public DriverViewModel   Driver   { get; } = new();
     public ControlsViewModel Controls { get; } = new();
 
@@ -24,6 +24,7 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(IpcClientService ipc)
     {
         _ipc = ipc;
+        Codec = new CodecViewModel(ipc);
         _ipc.StatusReceived += OnStatusReceived;
     }
 

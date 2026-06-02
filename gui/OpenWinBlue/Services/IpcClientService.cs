@@ -9,7 +9,7 @@ namespace OpenWinBlue.Services;
 /// polls GetStatus every second, and raises StatusReceived with the result.
 /// Automatically reconnects if the pipe closes.
 /// </summary>
-public sealed class IpcClientService : IDisposable
+public sealed class IpcClientService : IIpcSender, IDisposable
 {
     public event Action<StatusPayload>? StatusReceived;
 
