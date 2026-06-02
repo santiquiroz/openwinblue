@@ -104,4 +104,18 @@ bool A2dpStream::set_codec_config(uint32_t codec_id, std::string_view key, int64
     ) != FALSE;
 }
 
+bool A2dpStream::get_device_state(OWB_DEVICE_STATE* state) {
+    if (!is_open() || !state) return false;
+
+    DWORD bytes_returned = 0;
+    BOOL ok = DeviceIoControl(
+        impl_->device,
+        OWB_IOCTL_GET_DEVICE_STATE,
+        nullptr, 0,
+        state, static_cast<DWORD>(sizeof(OWB_DEVICE_STATE)),
+        &bytes_returned, nullptr
+    );
+    return ok && bytes_returned >= sizeof(OWB_DEVICE_STATE);
+}
+
 } // namespace owb

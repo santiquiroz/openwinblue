@@ -4,6 +4,7 @@
 #include <span>
 #include <string_view>
 #include <memory>
+#include "owb_ioctl.h"
 
 namespace owb {
 
@@ -34,6 +35,10 @@ public:
 
     // Push a codec parameter to the driver.
     bool set_codec_config(uint32_t codec_id, std::string_view key, int64_t value);
+
+    // Query the driver's A2DP connection state.
+    // Fills *state. Returns false in stub mode or if IOCTL fails.
+    bool get_device_state(OWB_DEVICE_STATE* state);
 
 private:
     struct Impl;

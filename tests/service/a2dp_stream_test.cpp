@@ -1,4 +1,8 @@
 // tests/service/a2dp_stream_test.cpp
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <winioctl.h>
 #include <gtest/gtest.h>
 #include <vector>
 #include "a2dp_stream.h"
@@ -35,4 +39,20 @@ TEST(A2dpStream, GetRfQualityReturnsFalseInStubMode) {
     int32_t rssi = 0;
     uint32_t retransmit = 0;
     EXPECT_FALSE(stream.get_rf_quality(&rssi, &retransmit));
+}
+
+TEST(A2dpStream, SetCodecConfigInStubModeReturnsFalse) {
+    owb::A2dpStream stream;
+    EXPECT_FALSE(stream.set_codec_config(0 /*SBC*/, "bitpool", 53));
+}
+
+TEST(A2dpStream, GetDeviceStateNullPtrReturnsFalse) {
+    owb::A2dpStream stream;
+    EXPECT_FALSE(stream.get_device_state(nullptr));
+}
+
+TEST(A2dpStream, GetDeviceStateInStubModeReturnsFalse) {
+    owb::A2dpStream stream;
+    OWB_DEVICE_STATE state{};
+    EXPECT_FALSE(stream.get_device_state(&state));
 }
