@@ -14,7 +14,7 @@ openwinblue/
 ├── service/         # Win32 user-mode service (C++20) — owb-service.exe
 │   └── codecs/      # Pluggable codec wrappers
 │   └── ai/          # ONNX Runtime + DirectML AI pipeline
-├── gui/             # WPF application (C# .NET 8) — OpenWinBlue.exe
+├── gui/             # WPF application (C# .NET 10, net10.0-windows) — OpenWinBlue.exe
 ├── third-party/     # Vendored open-source codec libs (git submodules)
 ├── installer/       # WiX Toolset v4 installer
 ├── tests/           # Unit + integration tests
@@ -28,31 +28,42 @@ openwinblue/
 
 ### Full solution (all components)
 ```powershell
-# Prerequisites: VS 2022, WDK 11, .NET 8 SDK, CMake 3.28+
-cmake --preset windows-release    # builds driver + service
-dotnet build gui/OpenWinBlue.sln  # builds GUI
+# Prerequisites: VS 18 2026, WDK 11, .NET 10 SDK, CMake 3.28+
+# CMake: use nmake-debug preset locally (VS18) or windows-debug preset on CI (VS17 runner)
+cmake --preset nmake-debug         # local build (NMake, VS18 cl.exe)
+# cmake --preset windows-debug     # CI/VS17 build
+dotnet build gui/OpenWinBlue.slnx  # builds GUI (.slnx format — .NET 10 SDK)
 ```
 
-### Driver only
+### Service only (local — NMake)
 ```powershell
-cmake --preset driver-debug
-```
-
-### Service only
-```powershell
-cmake --preset service-release
+cmake --preset nmake-debug
+cmake --build build/nmake-debug --target owb_service
 ```
 
 ### GUI only
 ```powershell
-dotnet build gui/OpenWinBlue.sln -c Release
+dotnet build gui/OpenWinBlue.slnx -c Release
 ```
 
 ### Run all tests
 ```powershell
-ctest --preset test-all            # C++ unit tests (GoogleTest)
-dotnet test tests/gui/             # C# unit tests (xUnit)
+# C++ tests — from build dir
+cd build/nmake-debug && ctest --output-on-failure
+
+# C# tests
+dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --verbosity normal
 ```
+
+### Notes on environment
+- **cmake**: not on PATH. Location: `C:/Users/santi/AppData/Local/Android/Sdk/cmake/4.1.2/bin/cmake.exe`
+  Add to PATH or use full path. VS17 2022 generator unavailable locally (VS18 installed).
+  Use `nmake-debug` preset locally.
+- **Visual Studio**: VS 18 2026 Community at `C:/Program Files/Microsoft Visual Studio/18/`
+  MSVC v145 (cl.exe 19.50.35729)
+- **dotnet**: .NET 10 SDK installed. Solution file uses `.slnx` format (new in .NET 10 SDK).
+- **CI (GitHub Actions)**: uses `windows-2022` runner (VS17, .NET 8). CI workflow uses
+  `windows-debug` preset and `net10.0-windows` TFM. Update CI dotnet version to `10.0.x`.
 
 ### Installer
 ```powershell
