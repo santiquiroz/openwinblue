@@ -1,9 +1,5 @@
 // driver/src/owb_a2dp.c
-// Define INITGUID before bthguid.h to instantiate all Bluetooth GUIDs
-// including GUID_BTHDDI_PROFILE_DRIVER_INTERFACE.
-#define INITGUID
-#include <guiddef.h>    // provides DEFINE_GUID macro
-#include <bthguid.h>    // instantiates all BT GUIDs (needs INITGUID)
+// GUIDs are instantiated by <initguid.h> in owb_a2dp.h.
 #include "owb_a2dp.h"
 #include "avdtp.h"
 #include "l2cap_stream.h"

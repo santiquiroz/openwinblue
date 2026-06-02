@@ -3,7 +3,10 @@
 #pragma once
 #include <ntddk.h>
 #include <wdf.h>
-#include <bthdef.h>   // BTH_ADDR, BTHSTATUS — must precede bthddi.h
+#include <initguid.h>
+#include <bthdef.h>
+#include <bthguid.h>
+#include <bthioctl.h>
 #include <bthddi.h>
 
 // L2CAP MTU constants (defined in bthddi.h; add fallbacks for older WDK)

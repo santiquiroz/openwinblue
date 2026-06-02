@@ -2,11 +2,12 @@
 #pragma once
 #include <ntddk.h>
 #include <wdf.h>
-// WDK 10.0.26100 bthddi.h requires bthdef.h to be included first
-// (bthdef.h defines BTH_ADDR, BTHSTATUS that bthddi.h uses).
-// Do NOT include bthsdpddi.h here — it requires sdplib.h which is not in scope.
-#include <bthdef.h>
-#include <bthddi.h>
+// Correct Bluetooth WDK include order per official bthecho sample:
+#include <initguid.h>   // instantiates GUIDs (GUID_BTHDDI_PROFILE_DRIVER_INTERFACE etc.)
+#include <bthdef.h>     // BTH_ADDR, BTHSTATUS
+#include <bthguid.h>    // BT service GUIDs
+#include <bthioctl.h>   // BT IOCTL codes
+#include <bthddi.h>     // BTH_PROFILE_DRIVER_INTERFACE, BRB types, L2CAP_CHANNEL_HANDLE
 #include "avdtp.h"
 
 #define OWB_DRIVER_VERSION_MAJOR 0
