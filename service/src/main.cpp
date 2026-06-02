@@ -2,6 +2,6 @@
 #include <cstdlib>
 
 int main() {
-    printf("owb-service v0.1 started\n");
+    std::puts("owb-service v0.1 started");
     return EXIT_SUCCESS;
 }

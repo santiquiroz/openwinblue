@@ -1,5 +1,7 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -22,15 +24,15 @@ public:
 
     // Encode PCM interleaved stereo int16 samples into the codec's output format.
     // input:  samples × 2 int16 (left, right, left, right …)
-    // output: caller-allocated buffer; returns bytes written, or -1 on error.
-    virtual int encode(std::span<const int16_t> input,
-                       std::span<uint8_t>       output) = 0;
+    // Returns bytes written, or -1 on error (output buffer too small, codec fault).
+    virtual std::ptrdiff_t encode(std::span<const int16_t> input,
+                                   std::span<uint8_t>       output) = 0;
 
     // Apply a configuration parameter. Returns false if the key is unknown.
     virtual bool set_param(CodecParam param) = 0;
 
-    // Retrieve a configuration parameter. Returns INT64_MIN if unknown.
-    virtual int64_t get_param(std::string_view key) const = 0;
+    // Retrieve a configuration parameter. Returns std::nullopt if the key is unknown.
+    virtual std::optional<int64_t> get_param(std::string_view key) const = 0;
 };
 
 } // namespace owb
