@@ -1,0 +1,15 @@
+[submodule "third-party/libldac"]
+	path = third-party/libldac
+	url = https://github.com/anonymix007/libldac
+[submodule "third-party/libopenaptx"]
+	path = third-party/libopenaptx
+	url = https://github.com/pali/libopenaptx
+[submodule "third-party/liblc3"]
+	path = third-party/liblc3
+	url = https://github.com/google/liblc3
+[submodule "third-party/rnnoise"]
+	path = third-party/rnnoise
+	url = https://github.com/xiph/rnnoise
+[submodule "third-party/libsbc"]
+	path = third-party/libsbc
+	url = https://git.kernel.org/pub/scm/bluetooth/sbc.git
