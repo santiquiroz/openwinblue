@@ -1,0 +1,21 @@
+; OpenWinBlue A2DP Driver — skeleton INF
+; Hardware IDs will be added in Phase 2 when AVDTP is implemented.
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Bluetooth
+ClassGuid   = {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+Provider    = %ManufacturerName%
+DriverVer   = 06/02/2026,0.1.0.0
+CatalogFile = owb_a2dp.cat
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+; No hardware IDs yet — added in Phase 2.
+
+[Strings]
+ManufacturerName = "OpenWinBlue Project"
+DiskName         = "OpenWinBlue A2DP Driver Disk"
