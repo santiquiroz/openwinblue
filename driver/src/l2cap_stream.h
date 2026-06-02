@@ -53,4 +53,4 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID L2capSignalingReceiveCallback(
     _In_                       PVOID  Context,
     _In_reads_bytes_(DataSize)  PUCHAR Data,
-    _In_                       UINT   DataSize);
+    _In_                       ULONG  DataSize);

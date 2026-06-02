@@ -1,4 +1,8 @@
 // driver/src/owb_a2dp.c
+// Define INITGUID in this translation unit to instantiate all GUIDs,
+// including GUID_BTHDDI_PROFILE_DRIVER_INTERFACE from bthddi.h.
+#define INITGUID
+#include <guiddef.h>
 #include "owb_a2dp.h"
 #include "avdtp.h"
 #include "l2cap_stream.h"
