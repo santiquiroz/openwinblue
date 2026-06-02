@@ -1,5 +1,6 @@
 // service/src/hfp_guard.cpp
 #include "hfp_guard.h"
+#include "com_ptr.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -10,6 +11,13 @@
 namespace owb {
 
 // SessionNotifier: COM callback — receives events for new audio sessions.
+//
+// NOTE: This class uses COM ref-counting + self-delete in Release() rather
+// than std::unique_ptr. This is a deliberate exception to the project's
+// RAII rule: IAudioSessionManager2::RegisterSessionNotification requires a
+// COM object that stays alive until UnregisterSessionNotification is called,
+// and the COM lifetime contract (AddRef/Release) is the correct ownership
+// model here. Do not convert this to unique_ptr.
 class SessionNotifier final : public IAudioSessionNotification {
 public:
     explicit SessionNotifier(IMMDeviceEnumerator* enumerator)
@@ -46,10 +54,10 @@ private:
 };
 
 struct HfpGuard::Impl {
-    IMMDeviceEnumerator*   enumerator   = nullptr;
-    IAudioSessionManager2* session_mgr  = nullptr;
-    SessionNotifier*       notifier     = nullptr;
-    bool                   active       = false;
+    ComPtr<IMMDeviceEnumerator>   enumerator;
+    ComPtr<IAudioSessionManager2> session_mgr;
+    SessionNotifier*              notifier = nullptr; // COM-managed lifetime (see above)
+    bool                          active   = false;
 };
 
 HfpGuard::HfpGuard() : impl_(std::make_unique<Impl>()) {}
@@ -62,7 +70,7 @@ bool HfpGuard::start() {
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
         __uuidof(IMMDeviceEnumerator),
-        reinterpret_cast<void**>(&impl_->enumerator)
+        reinterpret_cast<void**>(&impl_->enumerator.p)
     );
     if (FAILED(hr)) return false;
 
@@ -72,12 +80,12 @@ bool HfpGuard::start() {
 
     hr = device->Activate(
         __uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr,
-        reinterpret_cast<void**>(&impl_->session_mgr)
+        reinterpret_cast<void**>(&impl_->session_mgr.p)
     );
     device->Release();
     if (FAILED(hr)) return false;
 
-    impl_->notifier = new SessionNotifier(impl_->enumerator);
+    impl_->notifier = new SessionNotifier(impl_->enumerator.p);
     hr = impl_->session_mgr->RegisterSessionNotification(impl_->notifier);
     if (FAILED(hr)) {
         impl_->notifier->Release();
@@ -96,14 +104,8 @@ void HfpGuard::stop() {
         impl_->notifier->Release();
         impl_->notifier = nullptr;
     }
-    if (impl_->session_mgr) {
-        impl_->session_mgr->Release();
-        impl_->session_mgr = nullptr;
-    }
-    if (impl_->enumerator) {
-        impl_->enumerator->Release();
-        impl_->enumerator = nullptr;
-    }
+    impl_->session_mgr.reset();
+    impl_->enumerator.reset();
     impl_->active = false;
 }
 

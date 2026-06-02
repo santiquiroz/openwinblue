@@ -11,11 +11,11 @@ namespace owb {
 
 class CodecSbc final : public ICodec {
 public:
-    // Parameter name constants -- use these with get_param/set_param
-    static constexpr int64_t kModeJointStereo  = 3;
-    static constexpr int64_t kModeDualChannel  = 1;
-    static constexpr int64_t kModeStereo       = 2;
-    static constexpr int64_t kModeMono         = 0;
+    // Parameter name constants — use these with get_param/set_param
+    static constexpr int64_t kModeJointStereo = 3;
+    static constexpr int64_t kModeDualChannel = 1;
+    static constexpr int64_t kModeStereo      = 2;
+    static constexpr int64_t kModeMono        = 0;
 
     CodecSbc();
     ~CodecSbc() override;
@@ -24,24 +24,20 @@ public:
     std::string_view         name()     const noexcept override;
     std::ptrdiff_t           encode(std::span<const int16_t> input,
                                     std::span<uint8_t>       output) override;
-    bool                     set_param(CodecParam param)          override;
+    bool                     set_param(CodecParam param)           override;
     std::optional<int64_t>   get_param(std::string_view key) const override;
 
 private:
-    struct Config {
-        uint8_t frequency  = 0x02; // SBC_FREQ_44100
-        uint8_t blocks     = 0x03; // SBC_BLK_16
-        uint8_t subbands   = 0x01; // SBC_SB_8
-        uint8_t mode       = 0x03; // SBC_MODE_JOINT_STEREO
-        uint8_t allocation = 0x00; // SBC_AM_LOUDNESS
-        uint8_t bitpool    = 53;
-        uint8_t endian     = 0x00; // SBC_LE
-    };
+    // Desired codec configuration. Defined and defaulted in codec_sbc.cpp
+    // (where sbc.h is included) so named SBC_* constants can be used.
+    struct Config;
 
     void apply_config();
 
-    struct sbc_struct* sbc_;   // opaque C handle -- RAII via ctor/dtor
-    Config cfg_;
+    // Custom deleter calls sbc_finish() before freeing memory.
+    struct SbcDeleter { void operator()(sbc_struct* p) const noexcept; };
+    std::unique_ptr<sbc_struct, SbcDeleter> sbc_;
+    std::unique_ptr<Config> cfg_;
 };
 
 } // namespace owb

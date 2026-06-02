@@ -25,6 +25,7 @@ public:
 
 private:
     struct Impl;
+    static void release_impl(Impl* impl); // releases COM objects + mix_format
     std::unique_ptr<Impl> impl_;
 };
 

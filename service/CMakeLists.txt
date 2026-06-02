@@ -67,7 +67,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_sbc owb_hfp_guard owb_ipc_server
+    owb_codec_sbc owb_hfp_guard owb_ipc_server
     ole32 oleaut32 uuid Mmdevapi
 )
 

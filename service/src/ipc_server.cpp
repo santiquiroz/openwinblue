@@ -67,11 +67,15 @@ bool IpcServer::serve_one() {
             case ipc::MsgType::Ping: {
                 ipc::MsgHeader pong{ ipc::MsgType::Pong, 0 };
                 DWORD written = 0;
-                WriteFile(impl_->pipe, &pong, sizeof(pong), &written, nullptr);
+                if (!WriteFile(impl_->pipe, &pong, sizeof(pong), &written, nullptr)
+                        || written != sizeof(pong)) {
+                    client_done = true;
+                }
                 client_done = true;
                 break;
             }
             case ipc::MsgType::GetStatus: {
+                // TODO(phase2c): wire real state from AudioCapture + HfpGuard
                 ipc::MsgHeader reply{ ipc::MsgType::StatusReply,
                                       sizeof(ipc::StatusPayload) };
                 ipc::StatusPayload status{};
@@ -81,8 +85,10 @@ bool IpcServer::serve_one() {
                 status.hfp_guard_on = 0;
 
                 DWORD written = 0;
-                WriteFile(impl_->pipe, &reply,  sizeof(reply),  &written, nullptr);
-                WriteFile(impl_->pipe, &status, sizeof(status), &written, nullptr);
+                BOOL hdr_ok = WriteFile(impl_->pipe, &reply, sizeof(reply), &written, nullptr);
+                if (hdr_ok && written == sizeof(reply)) {
+                    WriteFile(impl_->pipe, &status, sizeof(status), &written, nullptr);
+                }
                 client_done = true;
                 break;
             }

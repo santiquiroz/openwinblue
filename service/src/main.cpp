@@ -18,7 +18,6 @@
 #include "audio_capture.h"
 #include "hfp_guard.h"
 #include "ipc_server.h"
-#include "codec_sbc.h"
 
 namespace {
 std::atomic<bool> g_running{true};
@@ -30,9 +29,12 @@ int main() {
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
 
-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    HRESULT hr_com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr_com) && hr_com != RPC_E_CHANGED_MODE) {
+        std::puts("[ERROR] COM initialization failed");
+        return EXIT_FAILURE;
+    }
 
-    owb::CodecSbc     codec;
     owb::AudioCapture capture;
     owb::HfpGuard     hfp_guard;
     owb::IpcServer    ipc;
