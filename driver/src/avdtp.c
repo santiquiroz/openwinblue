@@ -111,9 +111,14 @@ static VOID HandleSetConfigurationResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
 }
 
 static VOID HandleOpenResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
+    // Open the A2DP media L2CAP channel before sending AVDTP START.
+    NTSTATUS st = L2capOpenMediaChannel(DevExt);
+    if (!NT_SUCCESS(st)) {
+        KdPrint(("OpenWinBlue: media channel open failed 0x%x — starting anyway\n", st));
+    }
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
     AvdtpSendCommand(DevExt, AVDTP_MSG_START, &seid, 1u);
-    // State remains AvdtpStateOpen until START response confirms streaming.
+    // State transitions to AvdtpStateStreaming on successful START response.
 }
 
 static VOID HandleStartResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {

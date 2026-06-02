@@ -61,10 +61,12 @@ VOID OwbEvtIoDeviceControl(
             if (!NT_SUCCESS(status)) break;
 
             OWB_RF_QUALITY* q = (OWB_RF_QUALITY*)buf;
-            // Phase 2c: read from BthPort RSSI BRB.
-            q->rssi_dbm             = -60L;
-            q->retransmit_per_mille = 0UL;
-            q->link_quality         = 255UL;
+            LONG rssi = -60L;
+            L2capGetRssi(devExt, &rssi);  // real query; stub until Phase 3 BRB
+            q->rssi_dbm             = rssi;
+            q->retransmit_per_mille = 0UL;  // Phase 3: L2CAP retransmission stats
+            q->link_quality         = (rssi > -70L) ? 255UL :
+                                      (rssi > -80L) ? 128UL : 64UL;
             info = sizeof(OWB_RF_QUALITY);
             break;
         }
