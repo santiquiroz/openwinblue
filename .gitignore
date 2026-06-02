@@ -3,7 +3,11 @@ build/
 out/
 *.obj *.pdb *.ilk *.exp *.lib *.dll *.exe *.sys *.cat
 CMakeCache.txt CMakeFiles/
-x64/ x86/ ARM/ ARM64/
+/x64/ /x86/ /ARM/ /ARM64/
+
+# WiX artifacts
+*.wixobj
+*.wixpdb
 
 # .NET / Visual Studio
 bin/ obj/
@@ -12,6 +16,19 @@ packages/ *.nupkg
 
 # WDK / driver
 *.cer *.pfx
+
+# IDE
+.vscode/
+.idea/
+
+# Test & coverage outputs
+TestResults/
+coverage/
+*.trx
+*.opencover
+
+# MSBuild
+*.log
 
 # OS
 Thumbs.db .DS_Store desktop.ini
