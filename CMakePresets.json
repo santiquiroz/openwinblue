@@ -1,0 +1,44 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows Release",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "service-debug",
+      "configurePreset": "windows-debug",
+      "targets": ["owb_service"]
+    },
+    {
+      "name": "service-release",
+      "configurePreset": "windows-release",
+      "targets": ["owb_service"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-all",
+      "configurePreset": "windows-debug",
+      "output": { "verbosity": "verbose" }
+    }
+  ]
+}
