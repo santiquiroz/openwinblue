@@ -78,7 +78,7 @@ No CUDA, no vendor-specific SDKs. Single binary works on all Windows 10/11 hardw
 ## Installation
 
 ### Option 1 — Official Release (Recommended)
-1. Download the latest installer from [Releases](https://github.com/squirozu-expe/openwinblue/releases)
+1. Download the latest installer from [Releases](https://github.com/santiquiroz/openwinblue/releases)
 2. Run `OpenWinBlue-Setup-x.x.x.exe` as Administrator
 3. Follow the Driver Setup Wizard — the driver is Microsoft attestation-signed, one click
 
