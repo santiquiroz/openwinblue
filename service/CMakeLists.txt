@@ -48,6 +48,7 @@ add_library(owb_ipc_server STATIC
 )
 target_include_directories(owb_ipc_server PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/driver        # for owb_ioctl.h (via a2dp_stream.h)
 )
 target_compile_options(owb_ipc_server PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>

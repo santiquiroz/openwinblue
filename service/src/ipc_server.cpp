@@ -1,21 +1,24 @@
 // service/src/ipc_server.cpp
-#include "ipc_server.h"
-#include "ipc_protocol.h"
-
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <winioctl.h>
 
+#include "ipc_server.h"
+#include "ipc_protocol.h"
+#include "a2dp_stream.h"
+#include "owb_ioctl.h"
 #include <cstring>
 
 namespace owb {
 
 struct IpcServer::Impl {
-    HANDLE pipe    = INVALID_HANDLE_VALUE;
-    bool   running = false;
+    HANDLE      pipe    = INVALID_HANDLE_VALUE;
+    bool        running = false;
+    A2dpStream* stream_ = nullptr;
 };
 
-IpcServer::IpcServer() : impl_(std::make_unique<Impl>()) {}
+IpcServer::IpcServer(A2dpStream* stream) : impl_(std::make_unique<Impl>()) { impl_->stream_ = stream; }
 
 IpcServer::~IpcServer() { stop(); }
 
@@ -79,10 +82,22 @@ bool IpcServer::serve_one() {
                 ipc::MsgHeader reply{ ipc::MsgType::StatusReply,
                                       sizeof(ipc::StatusPayload) };
                 ipc::StatusPayload status{};
-                strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
-                status.bitrate      = 328000;
-                status.is_capturing = 0;
-                status.hfp_guard_on = 0;
+
+                if (impl_->stream_ && impl_->stream_->is_open()) {
+                    OWB_DEVICE_STATE devState{};
+                    if (impl_->stream_->get_device_state(&devState)) {
+                        status.is_capturing = (devState.state == OWB_STATE_STREAMING) ? 1u : 0u;
+                        status.bitrate = (devState.state == OWB_STATE_STREAMING) ? 328000u : 0u;
+                        static const char* kNames[] = {"SBC","LDAC","aptX","aptX-HD","AAC","LC3"};
+                        if (devState.active_codec_id < 6u)
+                            strncpy_s(status.codec_name, sizeof(status.codec_name),
+                                      kNames[devState.active_codec_id], _TRUNCATE);
+                    } else {
+                        strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
+                    }
+                } else {
+                    strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
+                }
 
                 DWORD written = 0;
                 BOOL hdr_ok = WriteFile(impl_->pipe, &reply, sizeof(reply), &written, nullptr);

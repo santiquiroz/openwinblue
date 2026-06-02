@@ -2,6 +2,8 @@
 #pragma once
 #include <memory>
 
+namespace owb { class A2dpStream; }
+
 namespace owb {
 
 // Named-pipe IPC server.
@@ -12,7 +14,7 @@ namespace owb {
 // then disconnects. Call in a loop on a dedicated thread.
 class IpcServer {
 public:
-    IpcServer();
+    explicit IpcServer(A2dpStream* stream = nullptr);
     ~IpcServer();
 
     // Create the named pipe. Returns false on failure.

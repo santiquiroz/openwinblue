@@ -40,8 +40,8 @@ int main() {
 
     owb::AudioCapture capture;
     owb::HfpGuard     hfp_guard;
-    owb::IpcServer    ipc;
     owb::A2dpStream   a2dp;
+    owb::IpcServer    ipc(&a2dp);
     owb::CodecSbc     codec;  // Phase 2c feeds this into the a2dp send loop
 
     std::puts("OpenWinBlue service v0.3 starting\xe2\x80\xa6");
