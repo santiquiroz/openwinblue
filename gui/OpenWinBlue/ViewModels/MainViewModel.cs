@@ -32,7 +32,7 @@ public partial class MainViewModel : ObservableObject
 
     private void OnStatusReceived(StatusPayload payload)
     {
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher != null)
         {
             dispatcher.Invoke(() =>
