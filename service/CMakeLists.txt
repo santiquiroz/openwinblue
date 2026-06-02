@@ -28,11 +28,24 @@ target_compile_options(owb_codec_sbc PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8 /FIsbc_compat.h>
 )
 
+# ── HFP Guard static library ─────────────────────────────────────────────────
+add_library(owb_hfp_guard STATIC
+    src/hfp_guard.cpp
+)
+target_include_directories(owb_hfp_guard PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(owb_hfp_guard PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+target_link_libraries(owb_hfp_guard PUBLIC
+    ole32 oleaut32 uuid Mmdevapi
+)
+
 # ── owb_service executable ───────────────────────────────────────────────────
 add_executable(owb_service
     src/main.cpp
     src/audio_capture.cpp
-    src/hfp_guard.cpp
     src/ipc_server.cpp
 )
 target_include_directories(owb_service PRIVATE
@@ -40,11 +53,11 @@ target_include_directories(owb_service PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/codecs
     ${CMAKE_CURRENT_SOURCE_DIR}/ai
 )
-target_link_libraries(owb_service PRIVATE owb_codec_sbc owb_sbc)
 target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
+    owb_codec_sbc owb_sbc owb_hfp_guard
     ole32 oleaut32 uuid Mmdevapi
 )
 

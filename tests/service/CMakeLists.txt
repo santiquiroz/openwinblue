@@ -10,6 +10,7 @@ target_link_libraries(owb_service_tests PRIVATE
     GTest::gmock
     owb_codec_sbc
     owb_sbc
+    owb_hfp_guard
     ole32 oleaut32
 )
 
