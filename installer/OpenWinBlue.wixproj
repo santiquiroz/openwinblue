@@ -1,0 +1,6 @@
+<Project Sdk="WixToolset.Sdk/5.0.0">
+  <PropertyGroup>
+    <OutputName>OpenWinBlue-Setup</OutputName>
+    <DefineConstants>ProductVersion=0.1.0</DefineConstants>
+  </PropertyGroup>
+</Project>
