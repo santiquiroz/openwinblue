@@ -43,6 +43,11 @@ NTSTATUS L2capSubmitBrb(
 }
 
 // ── Signaling receive callback ────────────────────────────────────────────────
+// Called by BthPort at up to DISPATCH_LEVEL when signaling data arrives.
+// Copies data into the device extension buffer and enqueues a work item
+// to process it at PASSIVE_LEVEL (where BRB allocation is safe).
+// Single-slot buffer: if a second packet arrives before the worker runs,
+// it is dropped (acceptable for AVDTP request/response flow).
 _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID L2capSignalingReceiveCallback(
     _In_                       PVOID  Context,
@@ -50,8 +55,14 @@ VOID L2capSignalingReceiveCallback(
     _In_                       UINT   DataSize)
 {
     POWB_DEVICE_EXTENSION devExt = (POWB_DEVICE_EXTENSION)Context;
-    if (!devExt || !Data || DataSize == 0 || DataSize > 0xFFFFu) return;
-    AvdtpHandleSignalingPacket(devExt, Data, (USHORT)DataSize);
+    if (!devExt || !Data || DataSize == 0) return;
+
+    const USHORT copyLen = (DataSize > sizeof(devExt->AvdtpWorkBuf))
+                           ? (USHORT)sizeof(devExt->AvdtpWorkBuf)
+                           : (USHORT)DataSize;
+    RtlCopyMemory(devExt->AvdtpWorkBuf, Data, copyLen);
+    devExt->AvdtpWorkLen = copyLen;
+    WdfWorkItemEnqueue(devExt->AvdtpWorkItem);  // safe at DISPATCH_LEVEL
 }
 
 // ── L2CAP signaling channel open ─────────────────────────────────────────────
@@ -97,6 +108,8 @@ NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 {
     if (!DevExt->BthInterface.BthAllocateBrb)
         return STATUS_DEVICE_NOT_READY;
+    if (DevExt->RemoteBtAddress == 0)
+        return STATUS_DEVICE_NOT_CONNECTED;
 
     struct _BRB_L2CA_OPEN_CHANNEL* brb =
         (struct _BRB_L2CA_OPEN_CHANNEL*)
@@ -104,7 +117,7 @@ NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     if (!brb) return STATUS_INSUFFICIENT_RESOURCES;
 
     brb->BtAddress            = DevExt->RemoteBtAddress;
-    brb->Psm                  = AVDTP_SIGNALING_PSM;
+    brb->Psm                  = AVDTP_MEDIA_PSM;  // 0x0019 per AVDTP spec §7; distinct CID from signaling
     brb->ChannelFlags         = CF_LINK_ENCRYPTED | CF_LINK_AUTHENTICATED;
     brb->IncomingMtuRange.Max = L2CAP_DEFAULT_MTU;
     brb->IncomingMtuRange.Min = L2CAP_MIN_MTU;
@@ -191,7 +204,7 @@ NTSTATUS L2capSendMediaFrame(
 
     struct _BRB_L2CA_ACL_TRANSFER* brb =
         (struct _BRB_L2CA_ACL_TRANSFER*)
-        DevExt->BthInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, 'RTPM');
+        DevExt->BthInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, 'BRTM');
     if (!brb) {
         ExFreePoolWithTag(pkt, 'RTPM');
         return STATUS_INSUFFICIENT_RESOURCES;

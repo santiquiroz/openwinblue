@@ -44,8 +44,9 @@ NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt) {
     if (DevExt->Avdtp.State != AvdtpStateIdle)
         return STATUS_INVALID_DEVICE_STATE;
 
-    DevExt->Avdtp.State = AvdtpStateDiscovering;
-    return AvdtpSendCommand(DevExt, AVDTP_MSG_DISCOVER, NULL, 0u);
+    NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_DISCOVER, NULL, 0u);
+    if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateDiscovering;
+    return st;
 }
 
 // Handle DISCOVER response: find first audio sink SEID, send GET_CAPABILITIES.
@@ -114,7 +115,9 @@ static VOID HandleOpenResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
     // Open the A2DP media L2CAP channel before sending AVDTP START.
     NTSTATUS st = L2capOpenMediaChannel(DevExt);
     if (!NT_SUCCESS(st)) {
-        KdPrint(("OpenWinBlue: media channel open failed 0x%x — starting anyway\n", st));
+        KdPrint(("OpenWinBlue: media channel open failed 0x%x — aborting\n", st));
+        DevExt->Avdtp.State = AvdtpStateIdle;
+        return;  // Don't send START without a media channel
     }
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
     AvdtpSendCommand(DevExt, AVDTP_MSG_START, &seid, 1u);

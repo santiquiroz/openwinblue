@@ -4,6 +4,17 @@
 #include "l2cap_stream.h"
 #include "ioctl.h"
 
+// PASSIVE_LEVEL worker: processes buffered AVDTP signaling data.
+VOID OwbAvdtpWorkCallback(_In_ WDFWORKITEM WorkItem)
+{
+    WDFDEVICE device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
+    POWB_DEVICE_EXTENSION ext = OwbGetDeviceExtension(device);
+    if (ext->AvdtpWorkLen > 0) {
+        AvdtpHandleSignalingPacket(ext, ext->AvdtpWorkBuf, ext->AvdtpWorkLen);
+        ext->AvdtpWorkLen = 0;
+    }
+}
+
 NTSTATUS
 DriverEntry(
     _In_ PDRIVER_OBJECT  DriverObject,
@@ -61,7 +72,7 @@ OwbEvtDeviceAdd(
                                     sizeof(rawAddr),
                                     &rawAddr,
                                     &resultLen);
-    if (NT_SUCCESS(status) && resultLen >= sizeof(ULONG)) {
+    if (NT_SUCCESS(status) && resultLen >= sizeof(BTH_ADDR)) {
         ext->RemoteBtAddress = (BTH_ADDR)(rawAddr & 0x0000FFFFFFFFFFFFull);
         KdPrint(("OpenWinBlue: remote BT addr %I64x\n", ext->RemoteBtAddress));
     } else {
@@ -95,6 +106,19 @@ OwbEvtDeviceAdd(
     status = IoctlRegister(device);
     if (!NT_SUCCESS(status)) {
         KdPrint(("OpenWinBlue: IoctlRegister failed 0x%x\n", status));
+        return status;
+    }
+
+    // Create the AVDTP deferred work item.
+    // Worker runs at PASSIVE_LEVEL — safe to call WdfRequestCreate.
+    WDF_WORKITEM_CONFIG workCfg;
+    WDF_WORKITEM_CONFIG_INIT(&workCfg, OwbAvdtpWorkCallback);
+    WDF_OBJECT_ATTRIBUTES workAttribs;
+    WDF_OBJECT_ATTRIBUTES_INIT(&workAttribs);
+    workAttribs.ParentObject = device;
+    status = WdfWorkItemCreate(&workCfg, &workAttribs, &ext->AvdtpWorkItem);
+    if (!NT_SUCCESS(status)) {
+        KdPrint(("OpenWinBlue: WdfWorkItemCreate failed 0x%x\n", status));
         return status;
     }
 

@@ -6,6 +6,9 @@
 
 // AVDTP L2CAP PSM (Protocol Service Multiplexer)
 #define AVDTP_SIGNALING_PSM    0x0019u
+// Media transport L2CAP also uses PSM 0x0019 per AVDTP spec §7.
+// The L2CAP stack assigns a distinct CID for each channel.
+#define AVDTP_MEDIA_PSM  AVDTP_SIGNALING_PSM
 
 // AVDTP signal identifiers (A2DP spec section 8.5)
 #define AVDTP_MSG_DISCOVER          0x01u

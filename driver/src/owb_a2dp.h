@@ -32,9 +32,18 @@ typedef struct _OWB_DEVICE_EXTENSION {
     // RTP sequence number and timestamp for media packets
     USHORT                       RtpSeqNum;
     ULONG                        RtpTimestamp;
+
+    // Work item for deferring AVDTP signaling processing to PASSIVE_LEVEL.
+    // L2CAP receive callbacks can arrive at DISPATCH_LEVEL — all AVDTP
+    // processing (which allocates BRBs via WdfRequestCreate) must run
+    // at PASSIVE_LEVEL via this work item.
+    WDFWORKITEM              AvdtpWorkItem;
+    UCHAR                    AvdtpWorkBuf[672]; // L2CAP_DEFAULT_MTU bytes
+    USHORT                   AvdtpWorkLen;
 } OWB_DEVICE_EXTENSION, *POWB_DEVICE_EXTENSION;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(OWB_DEVICE_EXTENSION, OwbGetDeviceExtension)
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD OwbEvtDeviceAdd;
+EVT_WDF_WORKITEM OwbAvdtpWorkCallback;
