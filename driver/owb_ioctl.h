@@ -68,6 +68,10 @@ typedef struct _OWB_SEND_FRAME_INPUT {
     unsigned char  data[1];    // flexible array — actual size = data_len
 } OWB_SEND_FRAME_INPUT, *POWB_SEND_FRAME_INPUT;
 
+// Bytes prepended before each encoded frame on the A2DP media channel:
+// 12-byte RTP header (RFC 3550) + 1-byte SBC RTP payload header (A2DP spec 4.3.1).
+#define OWB_RTP_OVERHEAD 13u
+
 // Compute the allocation size for a given frame length.
 // Returns size_t. Kernel driver must validate result fits within the actual
 // input buffer length before using it (data_len <= buffer_size - offsetof(data)).
