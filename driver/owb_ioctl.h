@@ -13,6 +13,12 @@
 #  include <winioctl.h>
 #endif
 
+// offsetof is needed for OWB_SEND_FRAME_INPUT_SIZE.
+// In user mode: stddef.h; in kernel mode: ntddk.h provides it as a compiler intrinsic.
+#ifndef offsetof
+#  include <stddef.h>
+#endif
+
 // Custom device type for OpenWinBlue IOCTLs (0x8000–0xFFFF = vendor range)
 #define OWB_DEVICE_TYPE  0x8000u
 
@@ -60,7 +66,7 @@ typedef struct _OWB_SEND_FRAME_INPUT {
     unsigned long  codec_id;   // OWB_CODEC_*
     unsigned long  data_len;   // byte count of data[] — driver MUST validate: data_len <= (buffer_size - offsetof(data))
     unsigned char  data[1];    // flexible array — actual size = data_len
-} OWB_SEND_FRAME_INPUT;
+} OWB_SEND_FRAME_INPUT, *POWB_SEND_FRAME_INPUT;
 
 // Compute the allocation size for a given frame length.
 // Returns size_t. Kernel driver must validate result fits within the actual
@@ -73,14 +79,14 @@ typedef struct _OWB_RF_QUALITY {
     long           rssi_dbm;             // signal strength (negative dBm)
     unsigned long  retransmit_per_mille; // retransmissions per 1000 packets
     unsigned long  link_quality;         // Windows quality score 0–255
-} OWB_RF_QUALITY;
+} OWB_RF_QUALITY, *POWB_RF_QUALITY;
 
 // Input for OWB_IOCTL_SET_CODEC_CONFIG.
 typedef struct _OWB_CODEC_CONFIG {
     unsigned long  codec_id;        // OWB_CODEC_*
     char           param_key[16];   // parameter name, e.g. "bitpool"
     long long      param_value;     // parameter value, e.g. 53
-} OWB_CODEC_CONFIG;
+} OWB_CODEC_CONFIG, *POWB_CODEC_CONFIG;
 
 // Output for OWB_IOCTL_GET_DEVICE_STATE.
 #define OWB_STATE_DISCONNECTED 0u
@@ -93,6 +99,6 @@ typedef struct _OWB_DEVICE_STATE {
     unsigned long  active_codec_id; // OWB_CODEC_*
     unsigned char  remote_addr[6];  // Bluetooth address (big-endian, MSB first, per Bluetooth spec)
     unsigned char  _pad[2];
-} OWB_DEVICE_STATE;
+} OWB_DEVICE_STATE, *POWB_DEVICE_STATE;
 
 #pragma pack(pop)

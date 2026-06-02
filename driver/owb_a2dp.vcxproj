@@ -80,7 +80,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Inf Include="owb_a2dp.inf" />
+    <!-- RunInfVerifier=false: InfVerif.dll is missing from the chocolatey WDK package.
+         Full INF validation runs locally once WDK is installed with the full installer. -->
+    <Inf Include="owb_a2dp.inf">
+      <RunInfVerifier>false</RunInfVerifier>
+    </Inf>
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

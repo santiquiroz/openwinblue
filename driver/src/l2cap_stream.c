@@ -28,7 +28,7 @@ NTSTATUS L2capSendSignaling(
     UNREFERENCED_PARAMETER(DevExt);
     UNREFERENCED_PARAMETER(Data);
     UNREFERENCED_PARAMETER(Length);
-    KdPrint(("OpenWinBlue: L2capSendSignaling len=%u (stub)\n", (UINT)Length));
+    KdPrint(("OpenWinBlue: L2capSendSignaling len=%u (stub)\n", (ULONG)Length));
     return STATUS_SUCCESS;
 }
 
