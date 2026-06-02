@@ -43,3 +43,49 @@ jobs:
 
       - name: Test
         run: dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --no-build --verbosity normal
+
+  build-driver:
+    name: Build Driver (KMDF + WDK)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WDK 11 via chocolatey
+        run: choco install windowsdriverkit11 --yes --no-progress
+        shell: pwsh
+
+      - name: Verify WDK kernel headers exist
+        run: |
+          $wdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+          $kmHeader = Get-ChildItem "$wdkRoot\Include" -Directory |
+                      Sort-Object Name -Descending |
+                      Select-Object -First 1 |
+                      ForEach-Object { "$($_.FullName)\km\ntddk.h" }
+          if (-not (Test-Path $kmHeader)) {
+            Write-Error "WDK kernel headers not found at $kmHeader"
+            exit 1
+          }
+          Write-Host "WDK OK: $kmHeader"
+        shell: pwsh
+
+      - name: Build driver with MSBuild
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -requires Microsoft.Component.MSBuild `
+            -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          & $msbuild driver\owb_a2dp.vcxproj `
+            /p:Configuration=Debug `
+            /p:Platform=x64 `
+            /t:Build `
+            /nologo
+        shell: pwsh
+
+      - name: Verify driver binary
+        run: |
+          if (-not (Test-Path "driver\x64\Debug\owb_a2dp.sys")) {
+            Write-Error "owb_a2dp.sys not found"
+            exit 1
+          }
+          $size = (Get-Item "driver\x64\Debug\owb_a2dp.sys").Length
+          Write-Host "owb_a2dp.sys built: $size bytes"
+        shell: pwsh
