@@ -2,7 +2,7 @@
 
 | Library | License | Source |
 |---------|---------|--------|
-| libldac | Apache 2.0 | https://android.googlesource.com/platform/external/libldac |
+| libldac | Apache 2.0 | https://github.com/anonymix007/libldac |
 | libopenaptx | LGPL 2.1+ | https://github.com/pali/libopenaptx |
 | liblc3 | Apache 2.0 | https://github.com/google/liblc3 |
 | rnnoise | BSD 3-Clause | https://github.com/xiph/rnnoise |
