@@ -2,8 +2,9 @@
 #pragma once
 #include <ntddk.h>
 #include <wdf.h>
-#include <bthddi.h>
-#include <bthsdpddi.h>
+#include <bthdef.h>     // BTH_ADDR, BTHSTATUS — must come before bthddi.h
+#include <bthsdpddi.h>  // SDP types — must come before bthddi.h
+#include <bthddi.h>     // BTH_PROFILE_DRIVER_INTERFACE, BRB types, L2CAP_CHANNEL_HANDLE
 #include "avdtp.h"
 
 #define OWB_DRIVER_VERSION_MAJOR 0
