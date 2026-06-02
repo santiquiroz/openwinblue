@@ -58,7 +58,7 @@ NTSTATUS L2capSendMediaFrame(
     hdr->seq_num  = RtlUshortByteSwap(DevExt->RtpSeqNum++);
     hdr->timestamp = RtlUlongByteSwap(DevExt->RtpTimestamp);
     hdr->ssrc     = 0x00000001UL;
-    DevExt->RtpTimestamp += 512u;  // 512 PCM samples per SBC frame (16 blocks × 32 samples)
+    DevExt->RtpTimestamp += 128u;  // blocks(16) × subbands(8) = 128 PCM samples/frame
 
     pkt[sizeof(OWB_RTP_HEADER)] = 0x01u;  // SBC payload hdr: 1 frame, no fragmentation
     RtlCopyMemory(pkt + sizeof(OWB_RTP_HEADER) + 1u, FrameData, FrameLen);

@@ -56,8 +56,8 @@ static VOID HandleDiscoverResponse(
 {
     if (!Data || Len == 0u) return;
     for (USHORT i = 0u; i + 1u < Len; i += 2u) {
-        UCHAR tsep = (Data[i] >> 3u) & 0x01u;
-        if (tsep == 0x01u) {   // SNK = audio sink (TSEP=1 per AVDTP spec)
+        UCHAR tsep = (Data[i] >> 1u) & 0x01u;  // bit 1 = TSEP per AVDTP spec §8.6.2
+        if (tsep == 0x01u) {   // 1 = SNK (audio sink), 0 = SRC
             DevExt->Avdtp.RemoteSeid = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
             DevExt->Avdtp.State = AvdtpStateConfiguring;
             UCHAR payload = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
@@ -96,19 +96,24 @@ static VOID HandleGetCapabilitiesResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
                                    DevExt->Avdtp.RemoteSeid,
                                    DevExt->Avdtp.LocalSeid,
                                    sizeof(payload));
-    DevExt->Avdtp.State = AvdtpStateConfigured;
-    AvdtpSendCommand(DevExt, AVDTP_MSG_SET_CONFIGURATION, payload, len);
+    if (len == 0u) {
+        KdPrint(("OpenWinBlue: BuildSbcSetConfig failed\n"));
+        return;
+    }
+    NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SET_CONFIGURATION, payload, len);
+    if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateConfigured;
 }
 
 static VOID HandleSetConfigurationResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
-    DevExt->Avdtp.State = AvdtpStateOpen;
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
-    AvdtpSendCommand(DevExt, AVDTP_MSG_OPEN, &seid, 1u);
+    NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_OPEN, &seid, 1u);
+    if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateOpen;
 }
 
 static VOID HandleOpenResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
     AvdtpSendCommand(DevExt, AVDTP_MSG_START, &seid, 1u);
+    // State remains AvdtpStateOpen until START response confirms streaming.
 }
 
 static VOID HandleStartResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
