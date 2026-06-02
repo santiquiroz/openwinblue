@@ -2,9 +2,10 @@
 #pragma once
 #include <ntddk.h>
 #include <wdf.h>
-#include <bthdef.h>     // BTH_ADDR, BTHSTATUS — must come before bthddi.h
-#include <bthsdpddi.h>  // SDP types — must come before bthddi.h
-#include <bthddi.h>     // BTH_PROFILE_DRIVER_INTERFACE, BRB types, L2CAP_CHANNEL_HANDLE
+// bthddi.h provides: BTH_ADDR, BTH_PROFILE_DRIVER_INTERFACE, L2CAP_CHANNEL_HANDLE,
+// BRB types (BRB_L2CA_OPEN_CHANNEL, BRB_L2CA_ACL_TRANSFER), and all BT constants.
+// It pulls in bthdef.h and bthioctl.h internally — do not include them separately.
+#include <bthddi.h>
 #include "avdtp.h"
 
 #define OWB_DRIVER_VERSION_MAJOR 0
