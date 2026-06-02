@@ -1,0 +1,9 @@
+<UserControl x:Class="OpenWinBlue.Views.ControlsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="16">
+        <TextBlock Text="HFP &amp; AI Controls" FontWeight="Bold" FontSize="13" Margin="0,0,0,8"/>
+        <TextBlock Text="HFP switching prevention and AI enhancement toggles — Phase 4b."
+                   Foreground="#666" FontStyle="Italic"/>
+    </StackPanel>
+</UserControl>
