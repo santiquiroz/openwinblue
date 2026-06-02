@@ -1,0 +1,20 @@
+# Build outputs
+build/
+out/
+*.obj *.pdb *.ilk *.exp *.lib *.dll *.exe *.sys *.cat
+CMakeCache.txt CMakeFiles/
+x64/ x86/ ARM/ ARM64/
+
+# .NET / Visual Studio
+bin/ obj/
+*.user *.suo .vs/
+packages/ *.nupkg
+
+# WDK / driver
+*.cer *.pfx
+
+# OS
+Thumbs.db .DS_Store desktop.ini
+
+# ONNX models (large binaries, distributed separately)
+*.onnx
