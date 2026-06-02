@@ -7,7 +7,7 @@
 
 NTSTATUS IoctlRegister(_In_ WDFDEVICE Device) {
     WDF_IO_QUEUE_CONFIG cfg;
-    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&cfg, WdfIoQueueDispatchParallel);
+    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&cfg, WdfIoQueueDispatchSequential);
     cfg.EvtIoDeviceControl = OwbEvtIoDeviceControl;
 
     WDFQUEUE queue;
@@ -40,8 +40,12 @@ VOID OwbEvtIoDeviceControl(
 
             POWB_SEND_FRAME_INPUT frame = (POWB_SEND_FRAME_INPUT)buf;
             // Validate driver-side: data_len must not exceed buffer
-            if (frame->data_len > (ULONG)(size - offsetof(OWB_SEND_FRAME_INPUT, data))) {
+            if ((SIZE_T)frame->data_len > size - offsetof(OWB_SEND_FRAME_INPUT, data)) {
                 status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+            if (frame->data_len > 0xFFFFu) {
+                status = STATUS_INVALID_PARAMETER;
                 break;
             }
             status = L2capSendMediaFrame(devExt,

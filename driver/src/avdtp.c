@@ -19,6 +19,7 @@ NTSTATUS AvdtpSendCommand(
     _In_reads_bytes_opt_(PayloadLen) const UCHAR* Payload,
     _In_ USHORT PayloadLen)
 {
+    if (PayloadLen > (USHORT)(0xFFFFu - 2u)) return STATUS_INVALID_PARAMETER;
     const USHORT pkt_len = (USHORT)(2u + PayloadLen);
     PUCHAR buf = (PUCHAR)ExAllocatePool2(POOL_FLAG_NON_PAGED,
                                           (SIZE_T)pkt_len, 'AVDT');
@@ -50,12 +51,13 @@ NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt) {
 // Handle DISCOVER response: find first audio sink SEID, send GET_CAPABILITIES.
 static VOID HandleDiscoverResponse(
     _In_ POWB_DEVICE_EXTENSION DevExt,
-    _In_reads_bytes_(Len) const UCHAR* Data,
+    _In_reads_bytes_opt_(Len) const UCHAR* Data,
     _In_ USHORT Len)
 {
+    if (!Data || Len == 0u) return;
     for (USHORT i = 0u; i + 1u < Len; i += 2u) {
-        UCHAR tsep = (Data[i] >> 1u) & 0x01u;
-        if (tsep == 0x00u) {   // SNK = audio sink
+        UCHAR tsep = (Data[i] >> 3u) & 0x01u;
+        if (tsep == 0x01u) {   // SNK = audio sink (TSEP=1 per AVDTP spec)
             DevExt->Avdtp.RemoteSeid = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
             DevExt->Avdtp.State = AvdtpStateConfiguring;
             UCHAR payload = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
