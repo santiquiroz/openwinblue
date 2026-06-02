@@ -39,12 +39,10 @@ VOID OwbEvtIoDeviceControl(
             if (!NT_SUCCESS(status)) break;
 
             POWB_SEND_FRAME_INPUT frame = (POWB_SEND_FRAME_INPUT)buf;
-            // Validate driver-side: data_len must not exceed buffer
-            if ((SIZE_T)frame->data_len > size - offsetof(OWB_SEND_FRAME_INPUT, data)) {
-                status = STATUS_BUFFER_TOO_SMALL;
-                break;
-            }
-            if (frame->data_len > 0xFFFFu) {
+            // Validate: data_len must fit in the input buffer AND not overflow
+            // the RTP packet length (sizeof(OWB_RTP_HEADER) + 1 + data_len).
+            if ((SIZE_T)frame->data_len > size - offsetof(OWB_SEND_FRAME_INPUT, data) ||
+                frame->data_len > 0xFFFFu - (sizeof(OWB_RTP_HEADER) + 1u)) {
                 status = STATUS_INVALID_PARAMETER;
                 break;
             }

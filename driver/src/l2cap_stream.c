@@ -44,9 +44,10 @@ NTSTATUS L2capSendMediaFrame(
     UNREFERENCED_PARAMETER(CodecId);
 
     // Build RTP + SBC payload header + frame data into one buffer.
-    if (FrameLen > (USHORT)(0xFFFFu - (USHORT)sizeof(OWB_RTP_HEADER) - 1u))
-        return STATUS_INVALID_PARAMETER;
-    const USHORT pkt_len = (USHORT)(sizeof(OWB_RTP_HEADER) + 1u + FrameLen);
+    // Compute in ULONG to avoid USHORT overflow before checking the bound.
+    ULONG pkt_len_u = sizeof(OWB_RTP_HEADER) + 1u + (ULONG)FrameLen;
+    if (pkt_len_u > 0xFFFFu) return STATUS_INVALID_PARAMETER;
+    const USHORT pkt_len = (USHORT)pkt_len_u;
     PUCHAR pkt = (PUCHAR)ExAllocatePool2(POOL_FLAG_NON_PAGED,
                                           (SIZE_T)pkt_len, 'RTPM');
     if (!pkt) return STATUS_INSUFFICIENT_RESOURCES;
