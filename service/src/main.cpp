@@ -1,7 +1,7 @@
 // service/src/main.cpp
 //
-// OpenWinBlue user-mode service entry point (Phase 2a).
-// Components: SBC codec, WASAPI loopback capture, HFP guard, IPC server.
+// OpenWinBlue user-mode service entry point (Phase 2b).
+// Components: SBC codec, WASAPI loopback capture, A2DP stream, HFP guard, IPC server.
 //
 #include <cstdio>
 #include <cstdlib>
@@ -9,19 +9,22 @@
 #include <atomic>
 #include <csignal>
 #include <chrono>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <winioctl.h>
 #include <combaseapi.h>
 
 #include "audio_capture.h"
 #include "hfp_guard.h"
 #include "ipc_server.h"
+#include "a2dp_stream.h"
+#include "codec_sbc.h"
 
 namespace {
 std::atomic<bool> g_running{true};
-
 void on_signal(int) { g_running = false; }
 } // namespace
 
@@ -38,8 +41,10 @@ int main() {
     owb::AudioCapture capture;
     owb::HfpGuard     hfp_guard;
     owb::IpcServer    ipc;
+    owb::A2dpStream   a2dp;
+    owb::CodecSbc     codec;  // Phase 2c feeds this into the a2dp send loop
 
-    std::puts("OpenWinBlue service v0.2 starting\xe2\x80\xa6");
+    std::puts("OpenWinBlue service v0.3 starting\xe2\x80\xa6");
 
     if (!capture.start()) {
         std::puts("[WARN] WASAPI loopback unavailable");
@@ -52,6 +57,12 @@ int main() {
         std::puts("[OK]  HFP guard active");
     } else {
         std::puts("[WARN] HFP guard unavailable");
+    }
+
+    if (a2dp.open()) {
+        std::puts("[OK]  A2DP stream driver connected");
+    } else {
+        std::puts("[WARN] A2DP kernel driver not installed (stub mode)");
     }
 
     if (!ipc.start()) {
@@ -72,6 +83,7 @@ int main() {
 
     std::puts("Shutting down\xe2\x80\xa6");
     ipc.stop();
+    a2dp.close();
     hfp_guard.stop();
     capture.stop();
     ipc_thread.join();
