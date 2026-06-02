@@ -58,13 +58,15 @@
 // data[] holds exactly data_len bytes of encoded audio (SBC frame, LDAC frame, etc.)
 typedef struct _OWB_SEND_FRAME_INPUT {
     unsigned long  codec_id;   // OWB_CODEC_*
-    unsigned long  data_len;   // byte count of data[]
+    unsigned long  data_len;   // byte count of data[] — driver MUST validate: data_len <= (buffer_size - offsetof(data))
     unsigned char  data[1];    // flexible array — actual size = data_len
 } OWB_SEND_FRAME_INPUT;
 
 // Compute the allocation size for a given frame length.
+// Returns size_t. Kernel driver must validate result fits within the actual
+// input buffer length before using it (data_len <= buffer_size - offsetof(data)).
 #define OWB_SEND_FRAME_INPUT_SIZE(data_bytes) \
-    (unsigned long)(offsetof(OWB_SEND_FRAME_INPUT, data) + (data_bytes))
+    (offsetof(OWB_SEND_FRAME_INPUT, data) + (data_bytes))
 
 // Output for OWB_IOCTL_GET_RF_QUALITY.
 typedef struct _OWB_RF_QUALITY {
@@ -89,7 +91,7 @@ typedef struct _OWB_CODEC_CONFIG {
 typedef struct _OWB_DEVICE_STATE {
     unsigned long  state;           // OWB_STATE_*
     unsigned long  active_codec_id; // OWB_CODEC_*
-    unsigned char  remote_addr[6];  // Bluetooth address (little-endian)
+    unsigned char  remote_addr[6];  // Bluetooth address (big-endian, MSB first, per Bluetooth spec)
     unsigned char  _pad[2];
 } OWB_DEVICE_STATE;
 
