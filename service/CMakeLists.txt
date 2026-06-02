@@ -53,6 +53,18 @@ target_compile_options(owb_ipc_server PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── A2DP stream (DeviceIoControl to kernel driver) ────────────────────────────
+add_library(owb_a2dp_stream STATIC
+    src/a2dp_stream.cpp
+)
+target_include_directories(owb_a2dp_stream PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/driver        # for owb_ioctl.h
+)
+target_compile_options(owb_a2dp_stream PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── owb_service executable ───────────────────────────────────────────────────
 add_executable(owb_service
     src/main.cpp
@@ -67,7 +79,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_hfp_guard owb_ipc_server
+    owb_codec_sbc owb_hfp_guard owb_ipc_server owb_a2dp_stream
     ole32 oleaut32 uuid Mmdevapi
 )
 

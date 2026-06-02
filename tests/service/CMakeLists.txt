@@ -3,6 +3,7 @@ add_executable(owb_service_tests
     codec_sbc_test.cpp
     ipc_test.cpp
     hfp_guard_test.cpp
+    a2dp_stream_test.cpp
 )
 
 target_link_libraries(owb_service_tests PRIVATE
@@ -12,6 +13,7 @@ target_link_libraries(owb_service_tests PRIVATE
     owb_sbc
     owb_hfp_guard
     owb_ipc_server
+    owb_a2dp_stream
     ole32 oleaut32
 )
 
@@ -20,6 +22,7 @@ target_include_directories(owb_service_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/service/src
     ${CMAKE_SOURCE_DIR}/third-party/libsbc
     ${CMAKE_SOURCE_DIR}/third-party/libsbc-compat
+    ${CMAKE_SOURCE_DIR}/driver
 )
 
 target_compile_options(owb_service_tests PRIVATE
