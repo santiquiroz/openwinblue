@@ -47,33 +47,66 @@ OwbEvtDeviceAdd(
     }
 
     ext = OwbGetDeviceExtension(device);
-    ext->Device        = device;
-    ext->IsActive      = FALSE;
-    ext->RtpSeqNum     = 0;
-    ext->RtpTimestamp  = 0;
+    RtlZeroMemory(ext, sizeof(*ext));
+    ext->Device      = device;
+    ext->BthIoTarget = WdfDeviceGetIoTarget(device);
     AvdtpContextInit(&ext->Avdtp);
 
-    // Create symbolic link \\.\OpenWinBlue for user-mode access
+    // Read the remote Bluetooth address from PnP.
+    // DevicePropertyAddress encodes the BT address in the lower 48 bits.
+    ULONG_PTR rawAddr  = 0;
+    ULONG     resultLen = 0;
+    status = WdfDeviceQueryProperty(device,
+                                    DevicePropertyAddress,
+                                    sizeof(rawAddr),
+                                    &rawAddr,
+                                    &resultLen);
+    if (NT_SUCCESS(status) && resultLen >= sizeof(ULONG)) {
+        ext->RemoteBtAddress = (BTH_ADDR)(rawAddr & 0x0000FFFFFFFFFFFFull);
+        KdPrint(("OpenWinBlue: remote BT addr %I64x\n", ext->RemoteBtAddress));
+    } else {
+        KdPrint(("OpenWinBlue: DevicePropertyAddress query failed 0x%x — continuing\n",
+                 status));
+        status = STATUS_SUCCESS;
+    }
+
+    // Acquire BthPort profile driver interface.
+    status = WdfFdoQueryForInterface(device,
+                                     &GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
+                                     (PINTERFACE)&ext->BthInterface,
+                                     sizeof(BTH_PROFILE_DRIVER_INTERFACE),
+                                     BTHDDI_V_CURR_VERSION,
+                                     NULL);
+    if (!NT_SUCCESS(status)) {
+        KdPrint(("OpenWinBlue: WdfFdoQueryForInterface failed 0x%x — continuing\n",
+                 status));
+        status = STATUS_SUCCESS;
+    }
+
+    // Create symbolic link \\.\OpenWinBlue for user-mode DeviceIoControl.
     DECLARE_CONST_UNICODE_STRING(symLink, L"\\DosDevices\\OpenWinBlue");
     status = WdfDeviceCreateSymbolicLink(device, &symLink);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: symbolic link creation failed 0x%x\n", status));
+        KdPrint(("OpenWinBlue: symbolic link failed 0x%x\n", status));
         return status;
     }
 
-    // Register IOCTL dispatch queue
+    // Register IOCTL dispatch queue.
     status = IoctlRegister(device);
     if (!NT_SUCCESS(status)) {
         KdPrint(("OpenWinBlue: IoctlRegister failed 0x%x\n", status));
         return status;
     }
 
-    // Begin AVDTP connection attempt (stub in Phase 2b — will fail gracefully)
+    // Begin AVDTP signaling channel open.
     status = L2capOpenSignalingChannel(ext);
-    if (status == STATUS_NOT_SUPPORTED) {
-        status = STATUS_SUCCESS;  // expected during Phase 2b development
+    if (status == STATUS_PENDING ||
+        status == STATUS_NOT_SUPPORTED ||
+        status == STATUS_DEVICE_NOT_READY) {
+        status = STATUS_SUCCESS;  // expected until BthInterface is acquired
     }
 
-    KdPrint(("OpenWinBlue: device added, AVDTP initialized\n"));
+    KdPrint(("OpenWinBlue: device added (v%d.%d)\n",
+             OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR));
     return status;
 }
