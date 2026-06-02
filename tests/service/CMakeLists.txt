@@ -11,6 +11,7 @@ target_link_libraries(owb_service_tests PRIVATE
     owb_codec_sbc
     owb_sbc
     owb_hfp_guard
+    owb_ipc_server
     ole32 oleaut32
 )
 

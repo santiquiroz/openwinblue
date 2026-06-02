@@ -42,11 +42,21 @@ target_link_libraries(owb_hfp_guard PUBLIC
     ole32 oleaut32 uuid Mmdevapi
 )
 
+# ── IPC server static library ─────────────────────────────────────────────────
+add_library(owb_ipc_server STATIC
+    src/ipc_server.cpp
+)
+target_include_directories(owb_ipc_server PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(owb_ipc_server PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── owb_service executable ───────────────────────────────────────────────────
 add_executable(owb_service
     src/main.cpp
     src/audio_capture.cpp
-    src/ipc_server.cpp
 )
 target_include_directories(owb_service PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -57,7 +67,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_sbc owb_hfp_guard
+    owb_codec_sbc owb_sbc owb_hfp_guard owb_ipc_server
     ole32 oleaut32 uuid Mmdevapi
 )
 
