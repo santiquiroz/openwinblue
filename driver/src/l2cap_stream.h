@@ -23,7 +23,8 @@ typedef struct _OWB_DEVICE_EXTENSION OWB_DEVICE_EXTENSION, *POWB_DEVICE_EXTENSIO
 // Must be called at PASSIVE_LEVEL only (connection setup, not streaming).
 NTSTATUS L2capSubmitBrb(
     _In_ POWB_DEVICE_EXTENSION DevExt,
-    _In_ PBRB Brb);
+    _In_ PBRB                  Brb,
+    _In_ ULONG                 BrbSize);
 
 // Open the AVDTP signaling L2CAP channel (PSM 0x0019) to the remote device.
 // Returns STATUS_SUCCESS on success, STATUS_DEVICE_NOT_READY if BthInterface

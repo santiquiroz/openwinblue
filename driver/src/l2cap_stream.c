@@ -1,53 +1,55 @@
 // driver/src/l2cap_stream.c
 // L2CAP channel management — Phase 2c real BRB implementation.
+// Reference: Windows Driver Samples / bluetooth / bthecho (MIT License)
 #include "l2cap_stream.h"
 #include "avdtp.h"
 #include "owb_a2dp.h"
+#include <bthioctl.h>   // IOCTL_INTERNAL_BTH_SUBMIT_BRB
 
 // RTP header (12 bytes packed, RFC 3550).
 #pragma pack(push, 1)
 typedef struct _OWB_RTP_HEADER {
-    UCHAR   vpxcc;      // V=2 P=0 X=0 CC=0 → 0x80
-    UCHAR   mpt;        // M=0 PT=96 (SBC) → 0x60
+    UCHAR   vpxcc;      // V=2 P=0 X=0 CC=0 -> 0x80
+    UCHAR   mpt;        // M=0 PT=96 (SBC) -> 0x60
     USHORT  seq_num;    // big-endian sequence number
     ULONG   timestamp;  // big-endian sample clock
     ULONG   ssrc;       // big-endian synchronization source
 } OWB_RTP_HEADER;
 #pragma pack(pop)
 
-// ── BRB submit helper ─────────────────────────────────────────────────────────
+// BRB submit helper
+// Submits a BRB to BthPort synchronously.
+// MUST be called at PASSIVE_LEVEL only (connection setup, not streaming hot path).
 NTSTATUS L2capSubmitBrb(
     _In_ POWB_DEVICE_EXTENSION DevExt,
-    _In_ PBRB Brb)
+    _In_ PBRB                  Brb,
+    _In_ ULONG                 BrbSize)
 {
-    if (!DevExt->BthInterface.BthSubmitBrb)
-        return STATUS_DEVICE_NOT_READY;
+    WDF_REQUEST_REUSE_PARAMS reuseParams;
+    WDF_REQUEST_REUSE_PARAMS_INIT(&reuseParams,
+                                   WDF_REQUEST_REUSE_NO_FLAGS,
+                                   STATUS_NOT_SUPPORTED);
+    NTSTATUS status = WdfRequestReuse(DevExt->BrbRequest, &reuseParams);
+    if (!NT_SUCCESS(status)) return status;
 
-    WDF_REQUEST_SEND_OPTIONS sendOpts;
-    WDF_REQUEST_SEND_OPTIONS_INIT(&sendOpts, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS);
-    WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&sendOpts, WDF_REL_TIMEOUT_IN_SEC(10));
+    WDF_MEMORY_DESCRIPTOR memDesc;
+    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memDesc, Brb, BrbSize);
 
-    WDFREQUEST request;
-    NTSTATUS   status = WdfRequestCreate(
-        WDF_NO_OBJECT_ATTRIBUTES, DevExt->BthIoTarget, &request);
-    if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfRequestCreate failed 0x%x\n", status));
-        return status;
-    }
-
-    status = DevExt->BthInterface.BthSubmitBrb(
-        DevExt->BthIoTarget, request, Brb, &sendOpts);
-
-    WdfObjectDelete(request);
-    return status;
+    return WdfIoTargetSendInternalIoctlOthersSynchronously(
+        DevExt->BthIoTarget,
+        DevExt->BrbRequest,
+        IOCTL_INTERNAL_BTH_SUBMIT_BRB,
+        &memDesc,
+        NULL,   // OtherArg2
+        NULL,   // OtherArg4
+        NULL,   // RequestOptions
+        NULL    // BytesReturned
+    );
 }
 
-// ── Signaling receive callback ────────────────────────────────────────────────
+// Signaling receive callback
 // Called by BthPort at up to DISPATCH_LEVEL when signaling data arrives.
-// Copies data into the device extension buffer and enqueues a work item
-// to process it at PASSIVE_LEVEL (where BRB allocation is safe).
-// Single-slot buffer: if a second packet arrives before the worker runs,
-// it is dropped (acceptable for AVDTP request/response flow).
+// Copies data to the work buffer and enqueues a work item for PASSIVE_LEVEL processing.
 _IRQL_requires_max_(DISPATCH_LEVEL)
 VOID L2capSignalingReceiveCallback(
     _In_                       PVOID  Context,
@@ -65,7 +67,7 @@ VOID L2capSignalingReceiveCallback(
     WdfWorkItemEnqueue(devExt->AvdtpWorkItem);  // safe at DISPATCH_LEVEL
 }
 
-// ── L2CAP signaling channel open ─────────────────────────────────────────────
+// L2CAP signaling channel open
 NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 {
     if (!DevExt->BthInterface.BthAllocateBrb)
@@ -81,19 +83,21 @@ NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     brb->BtAddress            = DevExt->RemoteBtAddress;
     brb->Psm                  = AVDTP_SIGNALING_PSM;
     brb->ChannelFlags         = CF_LINK_ENCRYPTED | CF_LINK_AUTHENTICATED;
-    brb->IncomingMtuRange.Max = L2CAP_DEFAULT_MTU;
-    brb->IncomingMtuRange.Min = L2CAP_MIN_MTU;
-    brb->OutMTU               = L2CAP_DEFAULT_MTU;
-    brb->CallbackRoutine      = L2capSignalingReceiveCallback;
+    brb->ConfigIn.Mtu.Max     = L2CAP_DEFAULT_MTU;
+    brb->ConfigIn.Mtu.Min     = L2CAP_MIN_MTU;
+    brb->ConfigOut.Mtu.Max    = L2CAP_DEFAULT_MTU;
+    brb->ConfigOut.Mtu.Min    = L2CAP_MIN_MTU;
+    brb->Callback             = L2capSignalingReceiveCallback;
     brb->CallbackContext      = DevExt;
+    brb->ReferenceObject      = (PVOID)WdfDeviceWdmGetDeviceObject(DevExt->Device);
+    brb->CallbackFlags        = CALLBACK_DISCONNECT | CALLBACK_RECV_PACKET;
 
-    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb);
+    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     if (NT_SUCCESS(status)) {
         DevExt->SignalingChannelHandle = brb->ChannelHandle;
         DevExt->Avdtp.State = AvdtpStateConnecting;
         KdPrint(("OpenWinBlue: signaling channel opened, handle=0x%p\n",
                  (PVOID)brb->ChannelHandle));
-        // Kick off AVDTP DISCOVER
         status = AvdtpConnect(DevExt);
     } else {
         KdPrint(("OpenWinBlue: BRB_L2CA_OPEN_CHANNEL failed 0x%x\n", status));
@@ -103,7 +107,7 @@ NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     return status;
 }
 
-// ── L2CAP media channel open (after AVDTP OPEN) ───────────────────────────────
+// L2CAP media channel open (after AVDTP OPEN)
 NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 {
     if (!DevExt->BthInterface.BthAllocateBrb)
@@ -117,15 +121,18 @@ NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     if (!brb) return STATUS_INSUFFICIENT_RESOURCES;
 
     brb->BtAddress            = DevExt->RemoteBtAddress;
-    brb->Psm                  = AVDTP_MEDIA_PSM;  // 0x0019 per AVDTP spec §7; distinct CID from signaling
+    brb->Psm                  = AVDTP_MEDIA_PSM;
     brb->ChannelFlags         = CF_LINK_ENCRYPTED | CF_LINK_AUTHENTICATED;
-    brb->IncomingMtuRange.Max = L2CAP_DEFAULT_MTU;
-    brb->IncomingMtuRange.Min = L2CAP_MIN_MTU;
-    brb->OutMTU               = L2CAP_DEFAULT_MTU;
-    brb->CallbackRoutine      = NULL;   // A2DP source: send-only
+    brb->ConfigIn.Mtu.Max     = L2CAP_DEFAULT_MTU;
+    brb->ConfigIn.Mtu.Min     = L2CAP_MIN_MTU;
+    brb->ConfigOut.Mtu.Max    = L2CAP_DEFAULT_MTU;
+    brb->ConfigOut.Mtu.Min    = L2CAP_MIN_MTU;
+    brb->Callback             = NULL;   // A2DP source: send-only
     brb->CallbackContext      = NULL;
+    brb->ReferenceObject      = NULL;
+    brb->CallbackFlags        = 0;
 
-    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb);
+    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     if (NT_SUCCESS(status)) {
         DevExt->MediaChannelHandle = brb->ChannelHandle;
         KdPrint(("OpenWinBlue: media channel opened, handle=0x%p\n",
@@ -138,7 +145,7 @@ NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     return status;
 }
 
-// ── L2CAP signaling send ──────────────────────────────────────────────────────
+// L2CAP signaling send
 NTSTATUS L2capSendSignaling(
     _In_ POWB_DEVICE_EXTENSION DevExt,
     _In_reads_bytes_(Length) const UCHAR* Data,
@@ -161,7 +168,7 @@ NTSTATUS L2capSendSignaling(
     brb->Buffer        = (PVOID)Data;
     brb->BufferMDL     = NULL;
 
-    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb);
+    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     if (!NT_SUCCESS(status)) {
         KdPrint(("OpenWinBlue: L2capSendSignaling failed 0x%x len=%u\n",
                  status, (ULONG)Length));
@@ -170,7 +177,7 @@ NTSTATUS L2capSendSignaling(
     return status;
 }
 
-// ── L2CAP media frame send ────────────────────────────────────────────────────
+// L2CAP media frame send
 NTSTATUS L2capSendMediaFrame(
     _In_ POWB_DEVICE_EXTENSION DevExt,
     _In_ ULONG  CodecId,
@@ -188,7 +195,8 @@ NTSTATUS L2capSendMediaFrame(
     if (pkt_len_u > 0xFFFFu) return STATUS_INVALID_PARAMETER;
     const USHORT pkt_len = (USHORT)pkt_len_u;
 
-    PUCHAR pkt = (PUCHAR)ExAllocatePool2(POOL_FLAG_NON_PAGED, (SIZE_T)pkt_len, 'RTPM');
+    PUCHAR pkt = (PUCHAR)ExAllocatePool2(POOL_FLAG_NON_PAGED,
+                                          (SIZE_T)pkt_len, 'RTPM');
     if (!pkt) return STATUS_INSUFFICIENT_RESOURCES;
 
     OWB_RTP_HEADER* hdr = (OWB_RTP_HEADER*)pkt;
@@ -197,7 +205,7 @@ NTSTATUS L2capSendMediaFrame(
     hdr->seq_num   = RtlUshortByteSwap(DevExt->RtpSeqNum++);
     hdr->timestamp = RtlUlongByteSwap(DevExt->RtpTimestamp);
     hdr->ssrc      = RtlUlongByteSwap(0x00000001UL);
-    DevExt->RtpTimestamp += 128u;  // blocks(16) × subbands(8) = 128 PCM samples/frame
+    DevExt->RtpTimestamp += 128u;  // blocks(16) x subbands(8) = 128 PCM samples/frame
 
     pkt[sizeof(OWB_RTP_HEADER)] = 0x01u;  // SBC: 1 frame, no fragmentation
     RtlCopyMemory(pkt + sizeof(OWB_RTP_HEADER) + 1u, FrameData, FrameLen);
@@ -217,13 +225,13 @@ NTSTATUS L2capSendMediaFrame(
     brb->Buffer        = pkt;
     brb->BufferMDL     = NULL;
 
-    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb);
+    NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     DevExt->BthInterface.BthFreeBrb((PBRB)brb);
     ExFreePoolWithTag(pkt, 'RTPM');
     return status;
 }
 
-// ── RSSI query ────────────────────────────────────────────────────────────────
+// RSSI query
 NTSTATUS L2capGetRssi(
     _In_  POWB_DEVICE_EXTENSION DevExt,
     _Out_ LONG*                 RssiDbm)

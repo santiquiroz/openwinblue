@@ -83,11 +83,12 @@ OwbEvtDeviceAdd(
     }
 
     // Acquire BthPort profile driver interface.
+    // Version 0x0200 (BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI) per bthddi.h.
     status = WdfFdoQueryForInterface(device,
                                      &GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
                                      (PINTERFACE)&ext->BthInterface,
                                      sizeof(BTH_PROFILE_DRIVER_INTERFACE),
-                                     BTHDDI_V_CURR_VERSION,
+                                     BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI,
                                      NULL);
     if (!NT_SUCCESS(status)) {
         KdPrint(("OpenWinBlue: WdfFdoQueryForInterface failed 0x%x — continuing\n",
@@ -120,6 +121,17 @@ OwbEvtDeviceAdd(
     status = WdfWorkItemCreate(&workCfg, &workAttribs, &ext->AvdtpWorkItem);
     if (!NT_SUCCESS(status)) {
         KdPrint(("OpenWinBlue: WdfWorkItemCreate failed 0x%x\n", status));
+        return status;
+    }
+
+    // Create a pre-allocated WDFREQUEST for synchronous BRB submission.
+    // Reused across all BRB calls via WdfRequestReuse (see L2capSubmitBrb).
+    WDF_OBJECT_ATTRIBUTES reqAttribs;
+    WDF_OBJECT_ATTRIBUTES_INIT(&reqAttribs);
+    reqAttribs.ParentObject = device;
+    status = WdfRequestCreate(&reqAttribs, ext->BthIoTarget, &ext->BrbRequest);
+    if (!NT_SUCCESS(status)) {
+        KdPrint(("OpenWinBlue: WdfRequestCreate (BrbRequest) failed 0x%x\n", status));
         return status;
     }
 

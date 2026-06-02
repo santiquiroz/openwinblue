@@ -20,11 +20,15 @@ typedef struct _OWB_DEVICE_EXTENSION {
     // Remote Bluetooth device address (read from PnP DevicePropertyAddress)
     BTH_ADDR                     RemoteBtAddress;
 
-    // BthPort profile driver interface (BthAllocateBrb / BthFreeBrb / BthSubmitBrb)
+    // BthPort profile driver interface (BthAllocateBrb / BthFreeBrb)
     BTH_PROFILE_DRIVER_INTERFACE BthInterface;
 
     // IoTarget for submitting BRBs to the Bluetooth stack
     WDFIOTARGET                  BthIoTarget;
+
+    // Pre-allocated WDFREQUEST reused for synchronous BRB submission.
+    // Created once in EvtDeviceAdd, reused via WdfRequestReuse each time.
+    WDFREQUEST                   BrbRequest;
 
     // L2CAP channel handles (set after BRB_L2CA_OPEN_CHANNEL completes)
     L2CAP_CHANNEL_HANDLE         SignalingChannelHandle;
