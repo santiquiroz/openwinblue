@@ -45,7 +45,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    ole32 oleaut32 uuid Mmdevapi audiopolicy
+    ole32 oleaut32 uuid Mmdevapi
 )
 
 add_subdirectory(ai)
