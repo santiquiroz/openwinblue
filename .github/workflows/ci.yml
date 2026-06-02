@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-service:
+    name: Build & Test Service (C++)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake --preset windows-debug
+
+      - name: Build
+        run: cmake --build build/debug --target owb_service owb_service_tests
+
+      - name: Run tests
+        run: ctest --preset test-all --output-on-failure
+        working-directory: build/debug
+
+  build-gui:
+    name: Build & Test GUI (C#)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore gui/OpenWinBlue.slnx
+
+      - name: Build
+        run: dotnet build gui/OpenWinBlue.slnx -c Debug --no-restore
+
+      - name: Test
+        run: dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --no-build --verbosity normal

@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-release:
+    name: Build Release
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build service (Release)
+        run: |
+          cmake --preset windows-release
+          cmake --build build/release --target owb_service
+
+      - name: Build GUI (Release)
+        run: dotnet build gui/OpenWinBlue.slnx -c Release
+
+      - name: Sign driver (stub — Phase 2)
+        run: |
+          pwsh tools/sign-driver.ps1 `
+            -InfPath driver/owb_a2dp.inf `
+            -SysPath driver/build/x64/Release/owb_a2dp.sys `
+            -OutDir build/signed
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/release/service/owb_service.exe
+            gui/OpenWinBlue/bin/Release/net10.0-windows/OpenWinBlue.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
