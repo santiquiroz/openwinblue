@@ -49,22 +49,36 @@ NTSTATUS L2capSubmitBrb(
 
 // Signaling receive callback
 // Called by BthPort at up to DISPATCH_LEVEL when signaling data arrives.
-// Copies data to the work buffer and enqueues a work item for PASSIVE_LEVEL processing.
+// L2CAP indication callback — matches PFNBTHPORT_INDICATION_CALLBACK.
+// Called at DISPATCH_LEVEL by BthPort for channel events.
+// On IndicationRecvPacket: stores packet length and enqueues work item.
+// The work item (PASSIVE_LEVEL) submits a BRB_L2CA_ACL_TRANSFER IN to read the data.
 _IRQL_requires_max_(DISPATCH_LEVEL)
-VOID L2capSignalingReceiveCallback(
-    _In_                       PVOID  Context,
-    _In_reads_bytes_(DataSize)  PUCHAR Data,
-    _In_                       ULONG  DataSize)
+VOID L2capSignalingIndicationCallback(
+    _In_opt_ PVOID                  Context,
+    _In_     INDICATION_CODE        Indication,
+    _In_     PINDICATION_PARAMETERS Parameters)
 {
     POWB_DEVICE_EXTENSION devExt = (POWB_DEVICE_EXTENSION)Context;
-    if (!devExt || !Data || DataSize == 0) return;
+    if (!devExt) return;
 
-    const USHORT copyLen = (DataSize > sizeof(devExt->AvdtpWorkBuf))
-                           ? (USHORT)sizeof(devExt->AvdtpWorkBuf)
-                           : (USHORT)DataSize;
-    RtlCopyMemory(devExt->AvdtpWorkBuf, Data, copyLen);
-    devExt->AvdtpWorkLen = copyLen;
-    WdfWorkItemEnqueue(devExt->AvdtpWorkItem);  // safe at DISPATCH_LEVEL
+    switch (Indication) {
+        case IndicationRecvPacket:
+            // Store pending length; work item will read the data via BRB IN.
+            devExt->PendingRecvLen = Parameters->Parameters.RecvPacket.PacketLength;
+            WdfWorkItemEnqueue(devExt->AvdtpWorkItem);
+            break;
+
+        case IndicationRemoteDisconnect:
+            // Remote side closed the channel.
+            devExt->SignalingChannelHandle = 0;
+            devExt->Avdtp.State = AvdtpStateIdle;
+            KdPrint(("OpenWinBlue: signaling channel disconnected\n"));
+            break;
+
+        default:
+            break;
+    }
 }
 
 // L2CAP signaling channel open
@@ -87,7 +101,7 @@ NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     brb->ConfigIn.Mtu.Min     = L2CAP_MIN_MTU;
     brb->ConfigOut.Mtu.Max    = L2CAP_DEFAULT_MTU;
     brb->ConfigOut.Mtu.Min    = L2CAP_MIN_MTU;
-    brb->Callback             = L2capSignalingReceiveCallback;
+    brb->Callback             = L2capSignalingIndicationCallback;
     brb->CallbackContext      = DevExt;
     brb->ReferenceObject      = (PVOID)WdfDeviceWdmGetDeviceObject(DevExt->Device);
     brb->CallbackFlags        = CALLBACK_DISCONNECT | CALLBACK_RECV_PACKET;

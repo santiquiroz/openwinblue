@@ -5,15 +5,40 @@
 #include "l2cap_stream.h"
 #include "ioctl.h"
 
-// PASSIVE_LEVEL worker: processes buffered AVDTP signaling data.
+// PASSIVE_LEVEL worker: reads pending AVDTP signaling data via BRB and processes it.
+// Enqueued by L2capSignalingIndicationCallback at DISPATCH_LEVEL when
+// IndicationRecvPacket fires with PendingRecvLen set.
 VOID OwbAvdtpWorkCallback(_In_ WDFWORKITEM WorkItem)
 {
     WDFDEVICE device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
     POWB_DEVICE_EXTENSION ext = OwbGetDeviceExtension(device);
-    if (ext->AvdtpWorkLen > 0) {
+
+    if (!ext->BthInterface.BthAllocateBrb || ext->PendingRecvLen == 0) return;
+
+    const ULONG readLen = min(ext->PendingRecvLen, (ULONG)sizeof(ext->AvdtpWorkBuf));
+    ext->PendingRecvLen = 0;
+
+    // Submit BRB_L2CA_ACL_TRANSFER IN to read the pending packet from BthPort.
+    struct _BRB_L2CA_ACL_TRANSFER* brb =
+        (struct _BRB_L2CA_ACL_TRANSFER*)
+        ext->BthInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, 'OWBR');
+    if (!brb) return;
+
+    brb->BtAddress     = ext->RemoteBtAddress;
+    brb->ChannelHandle = ext->SignalingChannelHandle;
+    brb->TransferFlags = ACL_TRANSFER_DIRECTION_IN | ACL_SHORT_TRANSFER_OK;
+    brb->BufferSize    = readLen;
+    brb->Buffer        = ext->AvdtpWorkBuf;
+    brb->BufferMDL     = NULL;
+
+    NTSTATUS status = L2capSubmitBrb(ext, (PBRB)brb, sizeof(*brb));
+    if (NT_SUCCESS(status) && brb->BufferSize > 0) {
+        ext->AvdtpWorkLen = (USHORT)brb->BufferSize;
         AvdtpHandleSignalingPacket(ext, ext->AvdtpWorkBuf, ext->AvdtpWorkLen);
         ext->AvdtpWorkLen = 0;
     }
+
+    ext->BthInterface.BthFreeBrb((PBRB)brb);
 }
 
 NTSTATUS

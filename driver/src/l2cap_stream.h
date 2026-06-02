@@ -52,10 +52,11 @@ NTSTATUS L2capGetRssi(
     _In_  POWB_DEVICE_EXTENSION DevExt,
     _Out_ LONG*                 RssiDbm);
 
-// L2CAP receive callback — called by BthPort at DISPATCH_LEVEL when
-// data arrives on the signaling channel.
+// L2CAP indication callback — registered as Callback on BRB_L2CA_OPEN_CHANNEL.
+// Called at DISPATCH_LEVEL. Matches PFNBTHPORT_INDICATION_CALLBACK signature.
+// On IndicationRecvPacket: stores length and enqueues work item for PASSIVE read.
 _IRQL_requires_max_(DISPATCH_LEVEL)
-VOID L2capSignalingReceiveCallback(
-    _In_                       PVOID  Context,
-    _In_reads_bytes_(DataSize)  PUCHAR Data,
-    _In_                       ULONG  DataSize);
+VOID L2capSignalingIndicationCallback(
+    _In_opt_ PVOID                   Context,
+    _In_     INDICATION_CODE         Indication,
+    _In_     PINDICATION_PARAMETERS  Parameters);

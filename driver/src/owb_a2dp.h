@@ -48,6 +48,7 @@ typedef struct _OWB_DEVICE_EXTENSION {
     WDFWORKITEM              AvdtpWorkItem;
     UCHAR                    AvdtpWorkBuf[672]; // L2CAP_DEFAULT_MTU bytes
     USHORT                   AvdtpWorkLen;
+    ULONG                    PendingRecvLen;    // set by callback, read by work item
 } OWB_DEVICE_EXTENSION, *POWB_DEVICE_EXTENSION;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(OWB_DEVICE_EXTENSION, OwbGetDeviceExtension)
