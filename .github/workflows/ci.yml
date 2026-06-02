@@ -23,7 +23,6 @@ jobs:
 
       - name: Run tests
         run: ctest --preset test-all --output-on-failure
-        working-directory: build/debug
 
   build-gui:
     name: Build & Test GUI (C#)
