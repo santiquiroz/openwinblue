@@ -2,9 +2,10 @@
 #pragma once
 #include <ntddk.h>
 #include <wdf.h>
-// bthddi.h provides: BTH_ADDR, BTH_PROFILE_DRIVER_INTERFACE, L2CAP_CHANNEL_HANDLE,
-// BRB types (BRB_L2CA_OPEN_CHANNEL, BRB_L2CA_ACL_TRANSFER), and all BT constants.
-// It pulls in bthdef.h and bthioctl.h internally — do not include them separately.
+// WDK 10.0.26100 bthddi.h requires bthdef.h to be included first
+// (bthdef.h defines BTH_ADDR, BTHSTATUS that bthddi.h uses).
+// Do NOT include bthsdpddi.h here — it requires sdplib.h which is not in scope.
+#include <bthdef.h>
 #include <bthddi.h>
 #include "avdtp.h"
 
