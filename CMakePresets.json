@@ -3,7 +3,7 @@
   "configurePresets": [
     {
       "name": "windows-debug",
-      "displayName": "Windows Debug",
+      "displayName": "Windows Debug (VS17 2022 / CI)",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/debug",
@@ -13,12 +13,21 @@
     },
     {
       "name": "windows-release",
-      "displayName": "Windows Release",
+      "displayName": "Windows Release (VS17 2022 / CI)",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "nmake-debug",
+      "displayName": "NMake Debug (local fallback — VS18 or no VS generator)",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/nmake-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     }
   ],
