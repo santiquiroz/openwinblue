@@ -15,11 +15,8 @@
 
         <!-- AI Enhancement -->
         <TextBlock Text="AI Audio Enhancement" FontWeight="SemiBold" Margin="0,0,0,6"/>
-        <TextBlock Text="Requires ONNX Runtime + DirectML (any DX12 GPU). Coming in Phase 6."
-                   Foreground="#888" FontSize="11" Margin="0,0,0,8"/>
-        <CheckBox Content="AI Noise Reduction (DeepFilterNet3)"
+        <CheckBox Content="AI Noise Reduction (RNNoise — CPU, ~10ms latency)"
                   IsChecked="{Binding NoiseReduction, Mode=TwoWay}"
-                  IsEnabled="False"
                   Margin="0,0,0,4"/>
         <CheckBox Content="Psychoacoustic Pre-Emphasis (Phase 6)"
                   IsEnabled="False"

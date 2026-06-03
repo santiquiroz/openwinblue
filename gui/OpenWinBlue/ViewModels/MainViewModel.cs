@@ -11,7 +11,7 @@ public partial class MainViewModel : ObservableObject
     public StatusViewModel   Status   { get; } = new();
     public CodecViewModel    Codec    { get; }
     public DriverViewModel   Driver   { get; } = new();
-    public ControlsViewModel Controls { get; } = new();
+    public ControlsViewModel Controls { get; }
 
     [ObservableProperty] private int    _selectedTab = 0;
     [ObservableProperty] private string _titleSuffix = "— not connected";
@@ -24,7 +24,8 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(IpcClientService ipc)
     {
         _ipc = ipc;
-        Codec = new CodecViewModel(ipc);
+        Codec    = new CodecViewModel(ipc);
+        Controls = new ControlsViewModel(ipc);
         _ipc.StatusReceived += OnStatusReceived;
     }
 
