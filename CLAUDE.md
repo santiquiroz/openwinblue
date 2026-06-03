@@ -203,12 +203,12 @@ Types: `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `ci`, `driver`, `code
 
 ## Phase Plan (high level)
 
-| Phase | Deliverable |
-|-------|-------------|
-| **1 — Foundation** | Repo structure, CMake, .NET project, CI skeleton, submodules |
-| **2 — Driver MVP** | KMDF skeleton, AVDTP, SBC over L2CAP, test signing |
-| **3 — Service MVP** | WASAPI capture, SBC encode, A2DP stream, IPC, HFP guard L1/L2 |
-| **4 — GUI MVP** | WPF: device list, SBC config, driver install/rollback, tray icon |
-| **5 — Codecs** | aptX Classic/HD/LL, LDAC, AAC |
-| **6 — AI** | ONNX Runtime + DirectML, DeepFilterNet3, RNNoise, adaptive bitrate |
-| **7 — Polish** | LC3, aptX Adaptive, multilanguage, Wix installer, GitHub release CI |
+| Phase | Deliverable | Status |
+|-------|-------------|--------|
+| **1 — Foundation** | Repo structure, CMake, .NET project, CI skeleton, submodules | ✅ Done |
+| **2 — Driver MVP** | KMDF skeleton, AVDTP, SBC over L2CAP, test signing | ✅ Done |
+| **3 — Service MVP** | WASAPI capture, SBC encode, A2DP stream, IPC, HFP guard L1/L2 | ✅ Done |
+| **4 — GUI MVP** | WPF: device list, SBC config, driver install/rollback, tray icon | ✅ Done |
+| **5 — Codecs** | aptX Classic/HD, LDAC, codec factory, AVDTP multi-codec negotiation | ✅ Done |
+| **6 — AI** | RNNoise noise reduction, AiPipeline, NoiseReducer, conditional model loading | ✅ Done |
+| **7 — Polish** | LC3 (LE Audio), HFP Level 1 GUI, WiX installer v0.3, CLAUDE.md final | ✅ Done |
