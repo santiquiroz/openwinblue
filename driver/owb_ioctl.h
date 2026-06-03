@@ -57,8 +57,9 @@
 #define OWB_CODEC_LDAC   1u
 #define OWB_CODEC_APTX   2u
 #define OWB_CODEC_APTXHD 3u
-#define OWB_CODEC_AAC    4u
-#define OWB_CODEC_LC3    5u
+#define OWB_CODEC_AAC              4u
+#define OWB_CODEC_LC3              5u
+#define OWB_CODEC_APTX_ADAPTIVE    6u
 
 // Input for OWB_IOCTL_SEND_AUDIO_FRAME.
 // data[] holds exactly data_len bytes of encoded audio (SBC frame, LDAC frame, etc.)

@@ -11,6 +11,7 @@ public partial class ControlsViewModel : ObservableObject
 
     [ObservableProperty] private bool _hfpGuardEnabled  = true;
     [ObservableProperty] private bool _noiseReduction   = false;
+    [ObservableProperty] private bool _deepFilter        = false;
     [ObservableProperty] private bool _adaptiveBitrate  = true;
 
     public string HfpGuardNote =>
@@ -32,6 +33,9 @@ public partial class ControlsViewModel : ObservableObject
 
     partial void OnNoiseReductionChanged(bool value)
         => _ipc.SendSetCodec("AI", "noise_reduction", value ? 1L : 0L);
+
+    partial void OnDeepFilterChanged(bool value)
+        => _ipc.SendSetCodec("AI", "deep_filter", value ? 1L : 0L);
 
     partial void OnAdaptiveBitrateChanged(bool value)
         => _ipc.SendSetCodec("AI", "adaptive_bitrate", value ? 1L : 0L);

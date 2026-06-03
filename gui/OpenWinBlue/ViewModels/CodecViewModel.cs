@@ -14,7 +14,7 @@ public partial class CodecViewModel : ObservableObject
     [ObservableProperty] private int _sampleRateIndex   = 0; // 44100 Hz
     [ObservableProperty] private int _selectedCodecIndex = 0; // SBC
 
-    public string[] AvailableCodecs { get; } = { "SBC", "aptX", "aptX-HD", "LDAC" };
+    public string[] AvailableCodecs { get; } = { "SBC", "aptX", "aptX-HD", "LDAC", "AAC", "LC3", "aptX-Adaptive" };
     public string[] ChannelModes    { get; } = { "Mono", "Stereo", "Dual Channel", "Joint Stereo" };
     public string[] SampleRates     { get; } = { "44 100 Hz", "48 000 Hz" };
     private static readonly int[] SampleRateHz = { 44100, 48000 };

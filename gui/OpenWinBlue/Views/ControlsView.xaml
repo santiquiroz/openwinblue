@@ -30,10 +30,11 @@
         <CheckBox Content="AI Noise Reduction (RNNoise — CPU, ~10ms latency)"
                   IsChecked="{Binding NoiseReduction, Mode=TwoWay}"
                   Margin="0,0,0,4"/>
-        <CheckBox Content="Psychoacoustic Pre-Emphasis (Phase 6)"
-                  IsEnabled="False"
+        <CheckBox Content="DeepFilterNet3 (ONNX Runtime + DirectML — requires deepfilter.onnx)"
+                  IsChecked="{Binding DeepFilter, Mode=TwoWay}"
+                  ToolTip="Place deepfilter.onnx next to owb-service.exe to enable GPU-accelerated noise suppression."
                   Margin="0,0,0,4"/>
-        <CheckBox Content="Smart Adaptive Bitrate (Phase 6)"
+        <CheckBox Content="Smart Adaptive Bitrate"
                   IsChecked="{Binding AdaptiveBitrate, Mode=TwoWay}"
                   IsEnabled="False"
                   Margin="0,0,0,4"/>

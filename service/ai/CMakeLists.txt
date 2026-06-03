@@ -46,15 +46,46 @@ target_compile_definitions(owb_rnnoise PUBLIC
     OWB_RNNOISE_HAVE_MODEL=${OWB_RNNOISE_HAVE_MODEL}
 )
 
-# ── AI Pipeline (NoiseReducer + AiPipeline) ───────────────────────────────────
+# ── ONNX Runtime detection (optional — enables DeepFilterNet3) ────────────────
+find_path(ONNXRUNTIME_INCLUDE_DIR onnxruntime_cxx_api.h
+    HINTS
+        "$ENV{ONNXRUNTIME_ROOT}/include"
+        "C:/Program Files/onnxruntime/include"
+        "C:/onnxruntime/include"
+)
+find_library(ONNXRUNTIME_LIB onnxruntime
+    HINTS
+        "$ENV{ONNXRUNTIME_ROOT}/lib"
+        "C:/Program Files/onnxruntime/lib"
+        "C:/onnxruntime/lib"
+)
+
+if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB)
+    message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIB}")
+    set(OWB_HAVE_ONNXRUNTIME 1)
+else()
+    message(STATUS "ONNX Runtime not found — DeepFilterNet3 will be a passthrough stub")
+    set(OWB_HAVE_ONNXRUNTIME 0)
+endif()
+
+# ── AI Pipeline (NoiseReducer + DeepFilter + AiPipeline) ──────────────────────
 add_library(owb_ai_pipeline STATIC
     noise_reducer.cpp
+    deep_filter.cpp
     ai_pipeline.cpp
 )
 target_include_directories(owb_ai_pipeline PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
-target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise)
+target_compile_definitions(owb_ai_pipeline PUBLIC
+    OWB_HAVE_ONNXRUNTIME=${OWB_HAVE_ONNXRUNTIME}
+)
+if(OWB_HAVE_ONNXRUNTIME)
+    target_include_directories(owb_ai_pipeline PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
+    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise ${ONNXRUNTIME_LIB})
+else()
+    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise)
+endif()
 target_compile_options(owb_ai_pipeline PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )

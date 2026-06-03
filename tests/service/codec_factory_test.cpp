@@ -37,6 +37,18 @@ TEST(CodecFactory, CreateLc3_NamedLC3) {
     EXPECT_EQ(codec->name(), "LC3");
 }
 
+TEST(CodecFactory, CreateAac_NamedAAC) {
+    auto codec = owb::CodecFactory::create(OWB_CODEC_AAC);
+    ASSERT_NE(codec, nullptr);
+    EXPECT_EQ(codec->name(), "AAC");
+}
+
+TEST(CodecFactory, CreateAptxAdaptive_NamedAptXAdaptive) {
+    auto codec = owb::CodecFactory::create(OWB_CODEC_APTX_ADAPTIVE);
+    ASSERT_NE(codec, nullptr);
+    EXPECT_EQ(codec->name(), "aptX-Adaptive");
+}
+
 TEST(CodecFactory, CreateUnknown_FallsBackToSBC) {
     auto codec = owb::CodecFactory::create(99u);
     ASSERT_NE(codec, nullptr);

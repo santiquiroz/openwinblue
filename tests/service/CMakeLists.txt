@@ -4,6 +4,8 @@ add_executable(owb_service_tests
     codec_aptx_test.cpp
     codec_ldac_test.cpp
     codec_lc3_test.cpp
+    codec_aac_test.cpp
+    codec_aptx_adaptive_test.cpp
     codec_factory_test.cpp
     ipc_test.cpp
     hfp_guard_test.cpp
@@ -16,6 +18,7 @@ target_link_libraries(owb_service_tests PRIVATE
     GTest::gmock
     owb_codec_factory
     owb_codec_lc3
+    owb_codec_aac
     owb_sbc
     owb_aptx
     owb_ldac

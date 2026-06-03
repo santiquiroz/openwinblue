@@ -77,6 +77,20 @@ target_compile_options(owb_codec_ldac PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── AAC codec wrapper (Windows Media Foundation built-in encoder) ─────────────
+add_library(owb_codec_aac STATIC
+    codecs/codec_aac.cpp
+)
+target_include_directories(owb_codec_aac PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+)
+target_compile_options(owb_codec_aac PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
+# ── aptX Adaptive stub (header-only — proprietary library not available) ──────
+# codec_aptx_adaptive.h is header-only; no separate library target needed.
+
 # ── liblc3 static library (LC3 / LE Audio, Google, Apache 2.0) ───────────────
 file(GLOB OWB_LC3_SOURCES
     ${CMAKE_SOURCE_DIR}/third-party/liblc3/src/*.c
@@ -110,7 +124,7 @@ target_include_directories(owb_codec_factory PUBLIC
     ${CMAKE_SOURCE_DIR}/driver          # for owb_ioctl.h
 )
 target_link_libraries(owb_codec_factory PUBLIC
-    owb_codec_sbc owb_codec_aptx owb_codec_ldac owb_codec_lc3
+    owb_codec_sbc owb_codec_aptx owb_codec_ldac owb_codec_lc3 owb_codec_aac
 )
 target_compile_options(owb_codec_factory PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
@@ -172,7 +186,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_factory owb_codec_lc3 owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_codec_factory owb_codec_lc3 owb_codec_aac owb_hfp_guard owb_ipc_server owb_a2dp_stream
     owb_ai_pipeline
     ole32 oleaut32 uuid Mmdevapi
 )
