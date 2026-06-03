@@ -4,6 +4,24 @@
     <StackPanel Margin="16">
         <TextBlock Text="Codec Configuration" FontWeight="Bold" FontSize="13" Margin="0,0,0,12"/>
 
+        <!-- Codec selector -->
+        <TextBlock Text="Codec" FontWeight="SemiBold" Margin="0,0,0,6"/>
+        <ListBox ItemsSource="{Binding AvailableCodecs}"
+                 SelectedIndex="{Binding SelectedCodecIndex, Mode=TwoWay}"
+                 HorizontalAlignment="Left"
+                 Margin="0,0,0,16">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" Margin="10,6" FontFamily="Consolas"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
         <!-- Bitpool slider -->
         <Grid Margin="0,0,0,12">
             <Grid.ColumnDefinitions>

@@ -32,4 +32,13 @@ public class CodecViewModelTests
         var vm = new CodecViewModel(ipc);
         Assert.False(vm.ApplyCodecCommand.CanExecute(null));
     }
+
+    [Fact]
+    public void CodecViewModel_DefaultCodec_IsSBC()
+    {
+        var ipc = Substitute.For<IIpcSender>();
+        var vm = new CodecViewModel(ipc);
+        Assert.Equal(0, vm.SelectedCodecIndex);
+        Assert.Equal("SBC", vm.AvailableCodecs[vm.SelectedCodecIndex]);
+    }
 }
