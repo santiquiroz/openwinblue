@@ -25,7 +25,7 @@ public partial class MainViewModel : ObservableObject
     {
         _ipc = ipc;
         Codec    = new CodecViewModel(ipc);
-        Controls = new ControlsViewModel(ipc);
+        Controls = new ControlsViewModel(ipc, new DriverInstallerService());
         _ipc.StatusReceived += OnStatusReceived;
     }
 

@@ -11,7 +11,19 @@
                   Margin="0,0,0,4"/>
         <TextBlock Text="{Binding HfpGuardNote}"
                    Foreground="#666" FontSize="11" TextWrapping="Wrap"
-                   Margin="0,0,0,16"/>
+                   Margin="0,0,0,8"/>
+
+        <!-- HFP Level 1 — stop/disable BthHFSrv service -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+            <Button Content="Disable HFP Profile (Level 1)"
+                    Command="{Binding DisableHfpLevel1Command}"
+                    ToolTip="Stops BthHFSrv — prevents automatic HFP switching. Requires admin."
+                    Padding="10,4" Margin="0,0,8,0"/>
+            <Button Content="Re-enable HFP Profile"
+                    Command="{Binding EnableHfpLevel1Command}"
+                    ToolTip="Restores BthHFSrv to normal operation."
+                    Padding="10,4"/>
+        </StackPanel>
 
         <!-- AI Enhancement -->
         <TextBlock Text="AI Audio Enhancement" FontWeight="SemiBold" Margin="0,0,0,6"/>

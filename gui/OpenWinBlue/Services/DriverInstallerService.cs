@@ -43,4 +43,44 @@ public sealed class DriverInstallerService : IDriverInstaller
             UseShellExecute = true,
         });
     }
+
+    public void DisableHfpProfile()
+    {
+        try
+        {
+            using var sc = new ServiceController("BthHFSrv");
+            if (sc.Status == ServiceControllerStatus.Running)
+            {
+                sc.Stop();
+                sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(5));
+            }
+        }
+        catch (InvalidOperationException) { /* service not present */ }
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName        = "sc.exe",
+            Arguments       = "config BthHFSrv start= disabled",
+            Verb            = "runas",
+            UseShellExecute = true,
+        });
+    }
+
+    public void EnableHfpProfile()
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName        = "sc.exe",
+            Arguments       = "config BthHFSrv start= demand",
+            Verb            = "runas",
+            UseShellExecute = true,
+        });
+
+        try
+        {
+            using var sc = new ServiceController("BthHFSrv");
+            sc.Start();
+        }
+        catch (InvalidOperationException) { /* service not present */ }
+    }
 }

@@ -1,11 +1,13 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using OpenWinBlue.Services;
 
 namespace OpenWinBlue.ViewModels;
 
 public partial class ControlsViewModel : ObservableObject
 {
-    private readonly IIpcSender _ipc;
+    private readonly IIpcSender       _ipc;
+    private readonly IDriverInstaller? _installer;
 
     [ObservableProperty] private bool _hfpGuardEnabled  = true;
     [ObservableProperty] private bool _noiseReduction   = false;
@@ -19,9 +21,10 @@ public partial class ControlsViewModel : ObservableObject
     // Design-time constructor
     public ControlsViewModel() : this(new NullIpcSender()) { }
 
-    public ControlsViewModel(IIpcSender ipc)
+    public ControlsViewModel(IIpcSender ipc, IDriverInstaller? installer = null)
     {
-        _ipc = ipc;
+        _ipc       = ipc;
+        _installer = installer;
     }
 
     partial void OnHfpGuardEnabledChanged(bool value)
@@ -32,6 +35,12 @@ public partial class ControlsViewModel : ObservableObject
 
     partial void OnAdaptiveBitrateChanged(bool value)
         => _ipc.SendSetCodec("AI", "adaptive_bitrate", value ? 1L : 0L);
+
+    [RelayCommand]
+    private void DisableHfpLevel1() => _installer?.DisableHfpProfile();
+
+    [RelayCommand]
+    private void EnableHfpLevel1() => _installer?.EnableHfpProfile();
 
     private sealed class NullIpcSender : IIpcSender
     {
