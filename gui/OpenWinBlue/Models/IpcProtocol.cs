@@ -37,9 +37,15 @@ public struct StatusPayload {
 
     public const int Size = 24;
 
-    public string CodecName =>
-        Encoding.ASCII.GetString(CodecNameBytes ?? Array.Empty<byte>())
-                       .TrimEnd('\0');
+    public string CodecName {
+        get {
+            var bytes = CodecNameBytes ?? Array.Empty<byte>();
+            var nullIdx = Array.IndexOf(bytes, (byte)0);
+            return nullIdx >= 0
+                ? Encoding.ASCII.GetString(bytes, 0, nullIdx)
+                : Encoding.ASCII.GetString(bytes);
+        }
+    }
 }
 
 /// <summary>Payload for SetCodec (40 bytes).</summary>

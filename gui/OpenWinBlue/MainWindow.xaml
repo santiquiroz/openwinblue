@@ -4,7 +4,8 @@
         xmlns:vm="clr-namespace:OpenWinBlue.ViewModels"
         xmlns:v="clr-namespace:OpenWinBlue.Views"
         Title="{Binding TitleSuffix, StringFormat='OpenWinBlue {0}'}"
-        Height="500" Width="780"
+        Height="540" Width="820"
+        Background="{StaticResource BgBrush}"
         WindowStartupLocation="CenterScreen"
         Closing="Window_Closing">
     <Window.DataContext>
@@ -23,6 +24,9 @@
             </TabItem>
             <TabItem Header="Controls">
                 <v:ControlsView DataContext="{Binding Controls}"/>
+            </TabItem>
+            <TabItem Header="Devices">
+                <v:DevicesView DataContext="{Binding Devices}"/>
             </TabItem>
         </TabControl>
     </Grid>

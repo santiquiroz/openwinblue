@@ -12,6 +12,7 @@ public partial class MainViewModel : ObservableObject
     public CodecViewModel    Codec    { get; }
     public DriverViewModel   Driver   { get; } = new();
     public ControlsViewModel Controls { get; }
+    public DevicesViewModel  Devices  { get; }
 
     [ObservableProperty] private int    _selectedTab = 0;
     [ObservableProperty] private string _titleSuffix = "— not connected";
@@ -26,6 +27,7 @@ public partial class MainViewModel : ObservableObject
         _ipc = ipc;
         Codec    = new CodecViewModel(ipc);
         Controls = new ControlsViewModel(ipc, new DriverInstallerService());
+        Devices  = new DevicesViewModel(ipc);
         _ipc.StatusReceived += OnStatusReceived;
     }
 

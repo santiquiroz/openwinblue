@@ -16,30 +16,30 @@
                 <RowDefinition Height="28"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="Status:" VerticalAlignment="Center" Foreground="#888"/>
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Status:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
             <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ConnectionState}" VerticalAlignment="Center" FontWeight="SemiBold"/>
 
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Active Codec:" VerticalAlignment="Center" Foreground="#888"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Active Codec:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
             <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ActiveCodec}" VerticalAlignment="Center" FontFamily="Consolas"/>
 
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Bitrate:" VerticalAlignment="Center" Foreground="#888"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Bitrate:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
             <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding BitrateText}" VerticalAlignment="Center" FontFamily="Consolas"/>
 
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Streaming:" VerticalAlignment="Center" Foreground="#888"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Streaming:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
             <Ellipse Grid.Row="3" Grid.Column="1" Width="12" Height="12" HorizontalAlignment="Left" VerticalAlignment="Center">
                 <Ellipse.Style>
                     <Style TargetType="Ellipse">
                         <Setter Property="Fill" Value="#888"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsStreaming}" Value="True">
-                                <Setter Property="Fill" Value="#22C55E"/>
+                                <Setter Property="Fill" Value="{StaticResource SuccessColor}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Ellipse.Style>
             </Ellipse>
 
-            <TextBlock Grid.Row="4" Grid.Column="0" Text="HFP Guard:" VerticalAlignment="Center" Foreground="#888"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="HFP Guard:" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
             <TextBlock Grid.Row="4" Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
@@ -48,13 +48,13 @@
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding HfpGuardActive}" Value="True">
                                 <Setter Property="Text" Value="Active"/>
-                                <Setter Property="Foreground" Value="#22C55E"/>
+                                <Setter Property="Foreground" Value="{StaticResource SuccessColor}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
         </Grid>
-        <TextBlock Text="Start owb-service.exe for live data." Foreground="#666" FontStyle="Italic" FontSize="11"/>
+        <TextBlock Text="Start owb-service.exe for live data." Foreground="{StaticResource TextSecondaryBrush}" FontStyle="Italic" FontSize="11"/>
     </StackPanel>
 </UserControl>
