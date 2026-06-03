@@ -77,6 +77,21 @@ target_compile_options(owb_codec_ldac PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── Codec factory (selects codec by OWB_CODEC_* ID) ─────────────────────────
+add_library(owb_codec_factory STATIC
+    codecs/codec_factory.cpp
+)
+target_include_directories(owb_codec_factory PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+    ${CMAKE_SOURCE_DIR}/driver          # for owb_ioctl.h
+)
+target_link_libraries(owb_codec_factory PUBLIC
+    owb_codec_sbc owb_codec_aptx owb_codec_ldac
+)
+target_compile_options(owb_codec_factory PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── HFP Guard static library ─────────────────────────────────────────────────
 add_library(owb_hfp_guard STATIC
     src/hfp_guard.cpp
@@ -129,7 +144,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_codec_aptx owb_codec_ldac owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_codec_factory owb_hfp_guard owb_ipc_server owb_a2dp_stream
     ole32 oleaut32 uuid Mmdevapi
 )
 
