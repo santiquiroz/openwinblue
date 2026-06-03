@@ -8,6 +8,7 @@
 #include "codec_sbc.h"
 #include "codec_aptx.h"
 #include "codec_ldac.h"
+#include "codec_lc3.h"
 
 namespace owb {
 
@@ -17,6 +18,7 @@ std::unique_ptr<ICodec> CodecFactory::create(uint32_t codec_id) {
         case OWB_CODEC_LDAC:   return std::make_unique<CodecLdac>();
         case OWB_CODEC_APTX:   return std::make_unique<CodecAptx>(false);
         case OWB_CODEC_APTXHD: return std::make_unique<CodecAptx>(true);
+        case OWB_CODEC_LC3:    return std::make_unique<CodecLc3>();
         default:               return std::make_unique<CodecSbc>();
     }
 }

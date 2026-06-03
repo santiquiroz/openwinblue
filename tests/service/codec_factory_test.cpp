@@ -31,6 +31,12 @@ TEST(CodecFactory, CreateAptxHd_NamedAptXHD) {
     EXPECT_EQ(codec->name(), "aptX-HD");
 }
 
+TEST(CodecFactory, CreateLc3_NamedLC3) {
+    auto codec = owb::CodecFactory::create(OWB_CODEC_LC3);
+    ASSERT_NE(codec, nullptr);
+    EXPECT_EQ(codec->name(), "LC3");
+}
+
 TEST(CodecFactory, CreateUnknown_FallsBackToSBC) {
     auto codec = owb::CodecFactory::create(99u);
     ASSERT_NE(codec, nullptr);

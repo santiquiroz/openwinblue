@@ -77,6 +77,30 @@ target_compile_options(owb_codec_ldac PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── liblc3 static library (LC3 / LE Audio, Google, Apache 2.0) ───────────────
+file(GLOB OWB_LC3_SOURCES
+    ${CMAKE_SOURCE_DIR}/third-party/liblc3/src/*.c
+)
+add_library(owb_lc3 STATIC ${OWB_LC3_SOURCES})
+target_include_directories(owb_lc3 PUBLIC
+    ${CMAKE_SOURCE_DIR}/third-party/liblc3/include
+)
+target_compile_options(owb_lc3 PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W0 /utf-8>
+)
+
+# ── LC3 codec C++ wrapper ─────────────────────────────────────────────────────
+add_library(owb_codec_lc3 STATIC
+    codecs/codec_lc3.cpp
+)
+target_include_directories(owb_codec_lc3 PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+)
+target_link_libraries(owb_codec_lc3 PUBLIC owb_lc3)
+target_compile_options(owb_codec_lc3 PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── Codec factory (selects codec by OWB_CODEC_* ID) ─────────────────────────
 add_library(owb_codec_factory STATIC
     codecs/codec_factory.cpp
@@ -86,7 +110,7 @@ target_include_directories(owb_codec_factory PUBLIC
     ${CMAKE_SOURCE_DIR}/driver          # for owb_ioctl.h
 )
 target_link_libraries(owb_codec_factory PUBLIC
-    owb_codec_sbc owb_codec_aptx owb_codec_ldac
+    owb_codec_sbc owb_codec_aptx owb_codec_ldac owb_codec_lc3
 )
 target_compile_options(owb_codec_factory PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
@@ -148,7 +172,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_factory owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_codec_factory owb_codec_lc3 owb_hfp_guard owb_ipc_server owb_a2dp_stream
     owb_ai_pipeline
     ole32 oleaut32 uuid Mmdevapi
 )
