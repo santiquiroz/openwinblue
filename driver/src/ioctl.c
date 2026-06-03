@@ -1,6 +1,7 @@
 // driver/src/ioctl.c
 // IOCTL dispatch — receives requests from owb-service.exe.
 #include "ioctl.h"
+#include "avdtp.h"
 #include "l2cap_stream.h"
 #include "owb_a2dp.h"
 #include "../owb_ioctl.h"
@@ -81,7 +82,12 @@ VOID OwbEvtIoDeviceControl(
             POWB_CODEC_CONFIG cfg = (POWB_CODEC_CONFIG)buf;
             KdPrint(("OpenWinBlue: SET_CODEC_CONFIG codec=%lu key=%.16s val=%lld\n",
                      cfg->codec_id, cfg->param_key, cfg->param_value));
-            // Phase 2c: trigger AVDTP SET_CONFIGURATION reconfiguration.
+
+            // key starts with "sw" → "switch" — triggers codec negotiation change.
+            if (cfg->param_key[0] == 's' && cfg->param_key[1] == 'w') {
+                status = AvdtpSetPreferredCodec(devExt, cfg->codec_id);
+            }
+            // Other keys (bitpool, freq, quality, etc.) are Phase 5c.
             break;
         }
 
