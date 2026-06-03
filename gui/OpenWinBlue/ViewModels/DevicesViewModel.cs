@@ -6,6 +6,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace OpenWinBlue.ViewModels;
@@ -47,22 +48,34 @@ public partial class DevicesViewModel : ObservableObject
         return key is not null;
     }
 
+    // NtQuerySystemInformation works without elevation, unlike bcdedit /enum.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_CODEINTEGRITY_INFORMATION
+    {
+        public uint Length;
+        public uint CodeIntegrityOptions;
+    }
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtQuerySystemInformation(
+        int SystemInformationClass,
+        ref SYSTEM_CODEINTEGRITY_INFORMATION SystemInformation,
+        int SystemInformationLength,
+        out int ReturnLength);
+
     private static bool CheckTestSigning()
     {
+        const int SystemCodeIntegrityInformation = 103;
+        const uint CODEINTEGRITY_OPTION_TESTSIGN = 0x00000002;
         try
         {
-            var p = Process.Start(new ProcessStartInfo {
-                FileName               = "bcdedit.exe",
-                Arguments              = "/enum",
-                RedirectStandardOutput = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
-            });
-            var output = p?.StandardOutput.ReadToEnd() ?? string.Empty;
-            p?.WaitForExit();
-            return output.Contains("testsigning") &&
-                   System.Text.RegularExpressions.Regex.IsMatch(
-                       output, @"testsigning\s+Yes", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var info = new SYSTEM_CODEINTEGRITY_INFORMATION
+            {
+                Length = (uint)Marshal.SizeOf<SYSTEM_CODEINTEGRITY_INFORMATION>()
+            };
+            int status = NtQuerySystemInformation(
+                SystemCodeIntegrityInformation, ref info, Marshal.SizeOf(info), out _);
+            return status == 0 && (info.CodeIntegrityOptions & CODEINTEGRITY_OPTION_TESTSIGN) != 0;
         }
         catch { return false; }
     }

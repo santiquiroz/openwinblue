@@ -4,7 +4,7 @@
 
 OpenWinBlue replaces the Windows inbox Bluetooth A2DP driver (`btavchdt.sys`) with a custom kernel driver that unlocks codec support Windows never offered — LDAC, aptX HD, aptX Low Latency — and adds an AI enhancement pipeline that runs on any GPU via DirectML (AMD, Intel, NVIDIA, Qualcomm NPU, CPU fallback).
 
-> **Status:** In active development. Phase 1 (foundation + SBC/aptX) in progress.  
+> **Status:** Core implementation complete (Phases 1–7). Driver installs and is accepted by Windows in test-signing mode. Seeking USB Bluetooth dongle testers and attestation signing contributors.  
 > Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
@@ -86,13 +86,16 @@ No CUDA, no vendor-specific SDKs. Single binary works on all Windows 10/11 hardw
 
 ### Option 2 — Build from Source (Developers)
 See [BUILDING.md](docs/BUILDING.md) for full instructions. Requires:
-- Visual Studio 2022 with "Desktop development with C++" and ".NET desktop development" workloads
-- Windows Driver Kit (WDK) 11
-- .NET 8 SDK
+- Visual Studio 2026 (or BuildTools) with "Desktop development with C++" workload
+- Windows Driver Kit (WDK) 11 (10.0.26100.0+)
+- .NET 10 SDK
 - CMake 3.28+
 
-> **Note:** Self-built drivers require Windows Test Signing Mode.  
-> The app will guide you through enabling it on first launch.
+> **Note:** Self-built drivers require Windows Test Signing Mode (`bcdedit /set testsigning on`).  
+> This requires Secure Boot to be disabled in BIOS. For testing without modifying your main machine,  
+> use a Hyper-V VM (Gen 2, Secure Boot off) — the app's Devices tab guides you through driver install.  
+>  
+> For production use, builds are signed via Microsoft Hardware Dev Center attestation (CI pipeline).
 
 ---
 
@@ -136,7 +139,7 @@ See [BUILDING.md](docs/BUILDING.md) for full instructions. Requires:
 | Codecs | libldac (Apache 2.0), libopenaptx (LGPL), libsbc (LGPL), liblc3 (Apache 2.0) |
 | AI inference | ONNX Runtime 1.x + DirectML EP |
 | AI models | DeepFilterNet3, RNNoise (BSD), custom ONNX models |
-| GUI | C# .NET 8, WPF, CommunityToolkit.Mvvm |
+| GUI | C# .NET 10, WPF, CommunityToolkit.Mvvm |
 | Installer | WiX Toolset v4 |
 | Driver signing | Microsoft Hardware Dev Center (attestation) |
 | CI/CD | GitHub Actions |
@@ -176,33 +179,34 @@ See [BUILDING.md](docs/BUILDING.md) for full instructions. Requires:
 
 ## Roadmap
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation ✅
 - [x] Repository setup, CI, third-party codec vendoring
-- [ ] KMDF driver skeleton + attestation signing pipeline
-- [ ] AVDTP signaling state machine
-- [ ] SBC codec (full parameter control)
-- [ ] WASAPI audio capture + A2DP streaming
-- [ ] HFP Guard (Level 1 + 2)
-- [ ] WPF GUI: devices, SBC config, driver install/rollback
-- [ ] WiX installer
+- [x] KMDF driver skeleton + AVDTP signaling state machine
+- [x] SBC codec (full parameter control)
+- [x] WASAPI audio capture + A2DP streaming
+- [x] HFP Guard (Level 1 + 2)
+- [x] WPF GUI: devices, SBC config, driver install/rollback
+- [x] WiX installer
 
-### Phase 2 — Extended Codecs + AI
-- [ ] aptX Classic, aptX HD, aptX Low Latency
-- [ ] LDAC (330 / 660 / 990 kbps)
-- [ ] AAC
-- [ ] Kernel HFP Guard (Level 3)
-- [ ] DeepFilterNet3 noise reduction (ONNX + DirectML)
-- [ ] Psychoacoustic pre-emphasis DSP
-- [ ] Smart adaptive bitrate (ONNX)
-- [ ] RF quality indicator + bitrate history chart
+### Phase 2 — Extended Codecs + AI ✅
+- [x] aptX Classic, aptX HD, aptX Low Latency
+- [x] LDAC (330 / 660 / 990 kbps)
+- [x] AAC
+- [x] RNNoise noise reduction pipeline
+- [x] ONNX Runtime + DirectML AI pipeline (DeepFilterNet3 stub)
 
-### Phase 3 — Quality + Future Codecs
-- [ ] LC3 / LE Audio path
-- [ ] Hi-Res Upsampling (DirectML)
-- [ ] Voice Enhancement for HFP (PostGAN)
-- [ ] aptX Adaptive (pending Qualcomm SDK)
-- [ ] High Data Throughput (Bluetooth 6.x, 8 Mbps)
+### Phase 3 — Polish + LE Audio ✅
+- [x] LC3 / LE Audio codec
+- [x] HFP Level 1 GUI controls
+- [x] WiX installer v0.3
+
+### Next — Hardware Testing & Production Signing
+- [ ] End-to-end test with real Bluetooth A2DP device + USB dongle in VM
+- [ ] Microsoft Hardware Dev Center attestation signing (CI pipeline)
+- [ ] DeepFilterNet3 ONNX model integration (full, not stub)
 - [ ] Multilanguage (ES / EN / PT / ZH)
+- [ ] aptX Adaptive (pending Qualcomm SDK)
+- [ ] Hi-Res Upsampling (DirectML)
 
 ---
 
