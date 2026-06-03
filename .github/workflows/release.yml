@@ -34,11 +34,16 @@ jobs:
             -SysPath driver/build/x64/Release/owb_a2dp.sys `
             -OutDir build/signed
 
+      - name: Build installer
+        run: dotnet build installer/OpenWinBlue.wixproj -c Release
+        shell: pwsh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             build/release/service/owb_service.exe
             gui/OpenWinBlue/bin/Release/net10.0-windows/OpenWinBlue.exe
+            installer/bin/Release/OpenWinBlue-Setup.msi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

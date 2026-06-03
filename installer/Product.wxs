@@ -2,17 +2,69 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="OpenWinBlue"
            Manufacturer="OpenWinBlue Project"
-           Version="0.1.0"
+           Version="0.3.0"
            UpgradeCode="7c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f"
            Compressed="true">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of OpenWinBlue is already installed." />
-
     <MediaTemplate EmbedCab="true" />
 
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <!-- Program Files\OpenWinBlue -->
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="OpenWinBlue">
+
+          <Component Id="ServiceExe" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+            <File Id="owb_service" Name="owb-service.exe"
+                  Source="$(var.ServiceBuildDir)\owb_service.exe"
+                  KeyPath="yes"/>
+          </Component>
+
+          <Component Id="GuiExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
+            <File Id="OpenWinBlue" Name="OpenWinBlue.exe"
+                  Source="$(var.GuiBuildDir)\OpenWinBlue.exe"
+                  KeyPath="yes"/>
+          </Component>
+
+          <Component Id="RollbackScript" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
+            <File Id="owb_rollback" Name="owb-rollback.bat"
+                  Source="$(sys.SOURCEFILEDIR)..\tools\owb-rollback.bat"
+                  KeyPath="yes"/>
+          </Component>
+
+        </Directory>
+      </Directory>
+
+      <!-- System32\drivers -->
+      <Directory Id="System64Folder">
+        <Directory Id="DriversFolder" Name="drivers">
+          <Component Id="DriverSys" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123">
+            <File Id="owb_a2dp_sys" Name="owb_a2dp.sys"
+                  Source="$(var.DriverBuildDir)\owb_a2dp.sys"
+                  KeyPath="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
     <Feature Id="ProductFeature" Title="OpenWinBlue" Level="1">
-      <!-- Files added in Phase 4 when GUI + service are complete -->
+      <ComponentRef Id="ServiceExe"/>
+      <ComponentRef Id="GuiExe"/>
+      <ComponentRef Id="RollbackScript"/>
+      <ComponentRef Id="DriverSys"/>
     </Feature>
+
+    <!-- Register driver with pnputil on install -->
+    <CustomAction Id="InstallDriver"
+                  Execute="deferred"
+                  Impersonate="no"
+                  ExeCommand="pnputil.exe /add-driver &quot;[INSTALLDIR]owb_a2dp.inf&quot; /install"
+                  FileRef="owb_a2dp_sys"
+                  Return="ignore"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallDriver" After="InstallFiles">NOT Installed</Custom>
+    </InstallExecuteSequence>
 
   </Package>
 </Wix>
