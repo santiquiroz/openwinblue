@@ -67,6 +67,12 @@ NTSTATUS AvdtpSendCommand(
 // Start AVDTP discovery — transitions from Idle to Discovering.
 NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt);
 
+// Update the preferred codec and trigger AVDTP reconfiguration (SUSPEND→SET_CONFIG→START).
+// Call from PASSIVE_LEVEL (IOCTL dispatch context).
+NTSTATUS AvdtpSetPreferredCodec(
+    _In_ POWB_DEVICE_EXTENSION DevExt,
+    _In_ ULONG                 NewCodecId);
+
 // Process an inbound AVDTP signaling packet.
 VOID AvdtpHandleSignalingPacket(
     _In_    POWB_DEVICE_EXTENSION DevExt,

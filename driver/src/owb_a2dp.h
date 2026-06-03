@@ -37,6 +37,10 @@ typedef struct _OWB_DEVICE_EXTENSION {
     // AVDTP signaling state machine context
     OWB_AVDTP_CONTEXT            Avdtp;
 
+    // Preferred codec for A2DP negotiation (OWB_CODEC_*).
+    // Set to OWB_CODEC_SBC on init; updated via OWB_IOCTL_SET_CODEC_CONFIG.
+    ULONG                        PreferredCodecId;
+
     // RTP sequence number and timestamp for media packets
     USHORT                       RtpSeqNum;
     ULONG                        RtpTimestamp;
