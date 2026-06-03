@@ -37,13 +37,34 @@ public partial class DevicesViewModel : ObservableObject
     public bool HasSelection => SelectedDevice is not null;
 
     // ── Driver state ──────────────────────────────────────────────────────────
-    public bool OwbDriverInstalled => CheckOwbInstalled();
+    public bool OwbDriverInstalled  => CheckOwbInstalled();
+    public bool TestSigningEnabled  => CheckTestSigning();
 
     private static bool CheckOwbInstalled()
     {
         using var key = Registry.LocalMachine.OpenSubKey(
             @"SYSTEM\CurrentControlSet\Services\owb_a2dp");
         return key is not null;
+    }
+
+    private static bool CheckTestSigning()
+    {
+        try
+        {
+            var p = Process.Start(new ProcessStartInfo {
+                FileName               = "bcdedit.exe",
+                Arguments              = "/enum",
+                RedirectStandardOutput = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            });
+            var output = p?.StandardOutput.ReadToEnd() ?? string.Empty;
+            p?.WaitForExit();
+            return output.Contains("testsigning") &&
+                   System.Text.RegularExpressions.Regex.IsMatch(
+                       output, @"testsigning\s+Yes", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        catch { return false; }
     }
 
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -126,26 +147,99 @@ public partial class DevicesViewModel : ObservableObject
     private void InstallDriver()
     {
         if (SelectedDevice is null) return;
+
+        if (!TestSigningEnabled)
+        {
+            var result = System.Windows.MessageBox.Show(
+                "El driver de OpenWinBlue no está firmado para producción.\n\n" +
+                "Para instalarlo en desarrollo necesitas activar Test Signing Mode:\n\n" +
+                "  bcdedit /set testsigning on\n\n" +
+                "¿Deseas activarlo ahora? (Requiere reiniciar Windows después)",
+                "Test Signing requerido",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+                EnableTestSigningCommand.Execute(null);
+            return;
+        }
+
         try
         {
-            var infPath = System.IO.Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..",
-                "driver", "owb_a2dp.inf");
-            infPath = System.IO.Path.GetFullPath(infPath);
-
-            Process.Start(new ProcessStartInfo
+            // Find INF: try repo path relative to exe, then current dir
+            var infPath = FindInfPath();
+            if (infPath is null)
             {
-                FileName        = "pnputil.exe",
-                Arguments       = $"/add-driver \"{infPath}\" /install",
+                StatusMessage = "No se encontró owb_a2dp.inf. Compila el driver primero.";
+                return;
+            }
+
+            // Run pnputil via temp bat to capture output
+            var logFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "owb_install.log");
+            var bat = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "owb_install.bat");
+            System.IO.File.WriteAllText(bat,
+                $"@echo off\r\npnputil.exe /add-driver \"{infPath}\" /install > \"{logFile}\" 2>&1\r\n");
+
+            var proc = Process.Start(new ProcessStartInfo {
+                FileName        = "cmd.exe",
+                Arguments       = $"/c \"{bat}\"",
                 Verb            = "runas",
                 UseShellExecute = true,
             });
-            StatusMessage = $"Instalando driver para {SelectedDevice.Name}…";
-            OnPropertyChanged(nameof(OwbDriverInstalled));
+            StatusMessage = $"Instalando driver para {SelectedDevice.Name}… (espera UAC)";
+
+            // Poll for completion in background
+            System.Threading.Tasks.Task.Run(() => {
+                proc?.WaitForExit(30_000);
+                var log = System.IO.File.Exists(logFile)
+                    ? System.IO.File.ReadAllText(logFile).Trim()
+                    : "(sin output)";
+                System.Windows.Application.Current.Dispatcher.Invoke(() => {
+                    StatusMessage = log.Length > 0 ? log : "Instalación completada.";
+                    OnPropertyChanged(nameof(OwbDriverInstalled));
+                    RefreshCommand.Execute(null);
+                });
+            });
         }
-        catch (Exception ex) { StatusMessage = $"Error al instalar: {ex.Message}"; }
+        catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
     }
     private bool CanInstall() => SelectedDevice?.IsAudio == true;
+
+    [RelayCommand]
+    private void EnableTestSigning()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo {
+                FileName        = "cmd.exe",
+                Arguments       = "/c bcdedit /set testsigning on",
+                Verb            = "runas",
+                UseShellExecute = true,
+            });
+            System.Windows.MessageBox.Show(
+                "Test Signing activado.\n\nReinicia Windows para que surta efecto.\n" +
+                "Después podrás instalar el driver OpenWinBlue.",
+                "Test Signing activado",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            OnPropertyChanged(nameof(TestSigningEnabled));
+        }
+        catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
+    }
+
+    private static string? FindInfPath()
+    {
+        var candidates = new[] {
+            // From repo root (dev build)
+            System.IO.Path.GetFullPath(System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "driver", "owb_a2dp.inf")),
+            // Same dir as exe (installed build)
+            System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "owb_a2dp.inf"),
+            // Hardcoded repo path
+            @"c:\suru\open winblue\driver\owb_a2dp.inf",
+        };
+        return candidates.FirstOrDefault(System.IO.File.Exists);
+    }
 
     [RelayCommand(CanExecute = nameof(CanReset))]
     private void ResetDriver()
