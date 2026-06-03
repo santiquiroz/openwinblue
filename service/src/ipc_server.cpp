@@ -8,18 +8,24 @@
 #include "ipc_protocol.h"
 #include "a2dp_stream.h"
 #include "owb_ioctl.h"
+#include "../ai/ai_pipeline.h"
 #include <cstring>
 #include <string_view>
 
 namespace owb {
 
 struct IpcServer::Impl {
-    HANDLE      pipe    = INVALID_HANDLE_VALUE;
-    bool        running = false;
-    A2dpStream* stream_ = nullptr;
+    HANDLE              pipe    = INVALID_HANDLE_VALUE;
+    bool                running = false;
+    A2dpStream*         stream_ = nullptr;
+    owb::ai::AiPipeline* ai_   = nullptr;
 };
 
-IpcServer::IpcServer(A2dpStream* stream) : impl_(std::make_unique<Impl>()) { impl_->stream_ = stream; }
+IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->stream_ = stream;
+    impl_->ai_     = ai;
+}
 
 IpcServer::~IpcServer() { stop(); }
 
@@ -118,6 +124,27 @@ bool IpcServer::serve_one() {
                 DWORD payload_read = 0;
                 ReadFile(impl_->pipe, &codec_payload,
                          sizeof(codec_payload), &payload_read, nullptr);
+
+                // "AI" codec name → route to AI pipeline, not the driver
+                if (std::strncmp(codec_payload.codec_name, "AI", 2) == 0) {
+                    bool ai_success = false;
+                    if (impl_->ai_) {
+                        const size_t klen = strnlen(codec_payload.param_key,
+                                                    sizeof(codec_payload.param_key));
+                        impl_->ai_->set_param(
+                            std::string_view(codec_payload.param_key, klen),
+                            codec_payload.param_value);
+                        ai_success = true;
+                    }
+                    ipc::MsgHeader ai_ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };
+                    ipc::AckPayload ai_ack_p{ ai_success ? uint8_t{1} : uint8_t{0}, {0u,0u,0u} };
+                    DWORD aw = 0;
+                    BOOL aok = WriteFile(impl_->pipe, &ai_ack, sizeof(ai_ack), &aw, nullptr);
+                    if (aok && aw == sizeof(ai_ack))
+                        WriteFile(impl_->pipe, &ai_ack_p, sizeof(ai_ack_p), &aw, nullptr);
+                    client_done = true;
+                    break;
+                }
 
                 // Resolve codec name string → OWB_CODEC_* ID
                 uint32_t codec_id = OWB_CODEC_SBC;  // default

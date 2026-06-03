@@ -22,6 +22,7 @@
 #include "ipc_server.h"
 #include "a2dp_stream.h"
 #include "codec_factory.h"
+#include "ai_pipeline.h"
 
 namespace {
 std::atomic<bool> g_running{true};
@@ -38,10 +39,11 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    owb::AudioCapture capture;
-    owb::HfpGuard     hfp_guard;
-    owb::A2dpStream   a2dp;
-    owb::IpcServer    ipc(&a2dp);
+    owb::AudioCapture    capture;
+    owb::HfpGuard        hfp_guard;
+    owb::A2dpStream      a2dp;
+    owb::ai::AiPipeline  ai;
+    owb::IpcServer       ipc(&a2dp, &ai);
 
     std::puts("OpenWinBlue service v0.3 starting\xe2\x80\xa6");
 
@@ -50,6 +52,7 @@ int main() {
     uint32_t active_codec_id = OWB_CODEC_SBC;
     auto codec = owb::CodecFactory::create(active_codec_id);
     std::printf("[OK]  Codec: %s\n", std::string(codec->name()).c_str());
+    std::puts("[OK]  AI pipeline ready (noise reduction: off by default)");
 
     if (!capture.start()) {
         std::puts("[WARN] WASAPI loopback unavailable");

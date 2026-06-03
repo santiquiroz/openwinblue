@@ -3,6 +3,7 @@
 #include <memory>
 
 namespace owb { class A2dpStream; }
+namespace owb::ai { class AiPipeline; }
 
 namespace owb {
 
@@ -14,7 +15,8 @@ namespace owb {
 // then disconnects. Call in a loop on a dedicated thread.
 class IpcServer {
 public:
-    explicit IpcServer(A2dpStream* stream = nullptr);
+    explicit IpcServer(A2dpStream* stream = nullptr,
+                       ai::AiPipeline* ai = nullptr);
     ~IpcServer();
 
     // Create the named pipe. Returns false on failure.
