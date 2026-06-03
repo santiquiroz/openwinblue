@@ -28,6 +28,29 @@ target_compile_options(owb_codec_sbc PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8 /FIsbc_compat.h>
 )
 
+# ── libopenaptx static library (aptX Classic + HD, GPL 3.0+) ─────────────────
+add_library(owb_aptx STATIC
+    ${CMAKE_SOURCE_DIR}/third-party/libopenaptx/openaptx.c
+)
+target_include_directories(owb_aptx PUBLIC
+    ${CMAKE_SOURCE_DIR}/third-party/libopenaptx
+)
+target_compile_options(owb_aptx PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W0 /utf-8>
+)
+
+# ── aptX codec C++ wrapper ─────────────────────────────────────────────────────
+add_library(owb_codec_aptx STATIC
+    codecs/codec_aptx.cpp
+)
+target_include_directories(owb_codec_aptx PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+)
+target_link_libraries(owb_codec_aptx PUBLIC owb_aptx)
+target_compile_options(owb_codec_aptx PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── HFP Guard static library ─────────────────────────────────────────────────
 add_library(owb_hfp_guard STATIC
     src/hfp_guard.cpp
@@ -80,7 +103,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_codec_sbc owb_codec_aptx owb_hfp_guard owb_ipc_server owb_a2dp_stream
     ole32 oleaut32 uuid Mmdevapi
 )
 
