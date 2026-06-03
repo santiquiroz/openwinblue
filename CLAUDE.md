@@ -60,7 +60,10 @@ dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --verbosity nor
   Add to PATH or use full path. VS17 2022 generator unavailable locally (VS18 installed).
   Use `nmake-debug` preset locally.
 - **Visual Studio**: VS 18 2026 Community at `C:/Program Files/Microsoft Visual Studio/18/`
-  MSVC v145 (cl.exe 19.50.35729)
+  AND BuildTools at `C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/`.
+  cmake picks cl.exe from BuildTools — use **BuildTools** vcvars64.bat for builds:
+  `C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Auxiliary/Build/vcvars64.bat`
+  MSVC v145 (cl.exe 19.50.35717)
 - **dotnet**: .NET 10 SDK installed. Solution file uses `.slnx` format (new in .NET 10 SDK).
 - **CI (GitHub Actions)**: uses `windows-2022` runner (VS17, .NET 8). CI workflow uses
   `windows-debug` preset and `net10.0-windows` TFM. Update CI dotnet version to `10.0.x`.
