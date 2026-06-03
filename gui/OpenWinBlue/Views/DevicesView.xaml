@@ -13,34 +13,26 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
             <TextBlock Text="Paired Bluetooth Devices" FontWeight="Bold" FontSize="13"
                        VerticalAlignment="Center" Margin="0,0,12,0"/>
-            <Button Content="⟳  Refresh" Command="{Binding RefreshCommand}"
-                    Padding="10,4"/>
+            <Button Content="⟳  Refresh" Command="{Binding RefreshCommand}" Padding="10,4"/>
         </StackPanel>
 
         <!-- Device list -->
-        <ListBox Grid.Row="1"
+        <ListBox Grid.Row="1" Margin="0,0,0,12"
                  ItemsSource="{Binding Devices}"
-                 SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
-                 Margin="0,0,0,12">
+                 SelectedItem="{Binding SelectedDevice, Mode=TwoWay}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <Grid>
+                    <Grid Margin="4,2">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="32"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <!-- BT icon -->
-                        <TextBlock Grid.Column="0" Text="⚡" FontSize="18"
-                                   VerticalAlignment="Center"
-                                   Foreground="{StaticResource AccentBrush}"/>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
-                            <TextBlock Text="{Binding Address}" FontSize="11"
-                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                       FontFamily="Consolas"/>
+                            <TextBlock Text="{Binding Address}" FontSize="11" FontFamily="Consolas"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
                         </StackPanel>
-                        <Border Grid.Column="2" CornerRadius="3" Padding="6,2"
+                        <Border Grid.Column="1" CornerRadius="3" Padding="6,2"
                                 Background="{StaticResource SurfaceAltBrush}"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding Class}" FontSize="11"
@@ -55,19 +47,8 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
             <Button Content="Apply Codec to Device"
                     Command="{Binding ApplyCodecCommand}"
-                    Padding="12,6" Margin="0,0,8,0">
-                <Button.Style>
-                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                        <Style.Triggers>
-                            <Trigger Property="IsEnabled" Value="True">
-                                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                <Setter Property="Foreground"  Value="{StaticResource AccentBrush}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </Button.Style>
-            </Button>
-            <TextBlock Text="Select a device above, then switch codec in the Codec tab."
+                    Padding="12,6" Margin="0,0,8,0"/>
+            <TextBlock Text="Select a device, then configure codec in the Codec tab."
                        Foreground="{StaticResource TextSecondaryBrush}"
                        FontSize="11" VerticalAlignment="Center"/>
         </StackPanel>

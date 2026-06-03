@@ -32,7 +32,7 @@
                         <Setter Property="Fill" Value="#888"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsStreaming}" Value="True">
-                                <Setter Property="Fill" Value="{StaticResource SuccessColor}"/>
+                                <Setter Property="Fill" Value="{StaticResource SuccessBrush}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -48,7 +48,7 @@
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding HfpGuardActive}" Value="True">
                                 <Setter Property="Text" Value="Active"/>
-                                <Setter Property="Foreground" Value="{StaticResource SuccessColor}"/>
+                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

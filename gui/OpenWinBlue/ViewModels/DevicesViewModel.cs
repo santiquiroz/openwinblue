@@ -2,7 +2,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using OpenWinBlue.Services;
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text;
 
 namespace OpenWinBlue.ViewModels;
@@ -32,44 +34,55 @@ public partial class DevicesViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
-        Devices.Clear();
-        SelectedDevice = null;
-
-        const string btKey = @"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices";
-        using var key = Registry.LocalMachine.OpenSubKey(btKey);
-
-        if (key is null)
+        try
         {
-            StatusMessage = "No paired Bluetooth devices found (registry key missing).";
-            return;
-        }
+            Devices.Clear();
+            SelectedDevice = null;
 
-        foreach (var addrKey in key.GetSubKeyNames())
+            const string btKey = @"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices";
+            using var key = Registry.LocalMachine.OpenSubKey(btKey);
+
+            if (key is null)
+            {
+                StatusMessage = "No paired Bluetooth devices found (no BT radio or not paired yet).";
+                return;
+            }
+
+            foreach (var addrKey in key.GetSubKeyNames())
+            {
+                try
+                {
+                    using var devKey = key.OpenSubKey(addrKey);
+                    if (devKey is null) continue;
+
+                    var nameRaw = devKey.GetValue("Name") as byte[];
+                    var name = nameRaw is not null
+                        ? Encoding.Unicode.GetString(nameRaw).TrimEnd('\0', ' ')
+                        : addrKey;
+
+                    if (string.IsNullOrWhiteSpace(name)) name = addrKey;
+
+                    var addr = addrKey.Length == 12
+                        ? string.Join(":", Enumerable.Range(0, 6)
+                            .Select(i => addrKey.Substring(i * 2, 2).ToUpper()))
+                        : addrKey.ToUpper();
+
+                    var classVal = devKey.GetValue("ClassOfDevice");
+                    var cls = classVal is int c ? DescribeClass(c) : "Unknown";
+
+                    Devices.Add(new BluetoothDeviceInfo(name, addr, cls));
+                }
+                catch { /* skip malformed entry */ }
+            }
+
+            StatusMessage = Devices.Count > 0
+                ? $"{Devices.Count} device(s) found. Select one and click Apply Codec."
+                : "No paired Bluetooth devices found.";
+        }
+        catch (Exception ex)
         {
-            using var devKey = key.OpenSubKey(addrKey);
-            if (devKey is null) continue;
-
-            var nameRaw = devKey.GetValue("Name") as byte[];
-            var name = nameRaw is not null
-                ? Encoding.Unicode.GetString(nameRaw).TrimEnd('\0', ' ')
-                : addrKey;
-
-            if (string.IsNullOrWhiteSpace(name)) name = addrKey;
-
-            // Format MAC address: aabbccddeeff → AA:BB:CC:DD:EE:FF
-            var addr = addrKey.Length == 12
-                ? string.Join(":", Enumerable.Range(0, 6).Select(i => addrKey.Substring(i * 2, 2).ToUpper()))
-                : addrKey.ToUpper();
-
-            var classVal = devKey.GetValue("ClassOfDevice");
-            var cls = classVal is int c ? DescribeClass(c) : "Unknown";
-
-            Devices.Add(new BluetoothDeviceInfo(name, addr, cls));
+            StatusMessage = $"Error scanning devices: {ex.Message}";
         }
-
-        StatusMessage = Devices.Count > 0
-            ? $"{Devices.Count} device(s) found. Select one and click Apply Codec."
-            : "No paired Bluetooth devices found.";
     }
 
     [RelayCommand(CanExecute = nameof(CanApply))]
