@@ -46,43 +46,29 @@
     </Style>
 
     <Style TargetType="TabItem">
-        <Setter Property="Foreground"       Value="{StaticResource TextSecondaryBrush}"/>
-        <Setter Property="Background"       Value="Transparent"/>
-        <Setter Property="BorderThickness"  Value="0"/>
-        <Setter Property="Padding"          Value="16,8"/>
-        <Setter Property="FontSize"         Value="13"/>
+        <Setter Property="Foreground"      Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="Background"      Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding"         Value="16,8"/>
+        <Setter Property="FontSize"        Value="13"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
-                    <Border x:Name="Root" Padding="{TemplateBinding Padding}"
-                            Background="Transparent"
+                    <Border x:Name="Root"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
                             BorderThickness="0,0,0,2"
                             BorderBrush="Transparent">
                         <ContentPresenter ContentSource="Header"
-                                          TextBlock.Foreground="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
-                        <VisualStateManager.VisualStateGroups>
-                            <VisualStateGroup x:Name="SelectionStates">
-                                <VisualState x:Name="Selected">
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Root"
-                                                        Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
-                                                        To="{StaticResource AccentColor}" Duration="0"/>
-                                        <ColorAnimation Storyboard.TargetName="Root"
-                                                        Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                        To="Transparent" Duration="0"/>
-                                    </Storyboard>
-                                </VisualState>
-                                <VisualState x:Name="Unselected"/>
-                            </VisualStateGroup>
-                        </VisualStateManager.VisualStateGroups>
+                                          TextBlock.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Root" Property="BorderBrush"  Value="{StaticResource AccentBrush}"/>
-                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="Foreground"                     Value="{StaticResource AccentBrush}"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Root" Property="Background" Value="{StaticResource SurfaceBrush}"/>
+                            <Setter TargetName="Root" Property="Background"   Value="{StaticResource SurfaceBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

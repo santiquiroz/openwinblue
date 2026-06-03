@@ -15,6 +15,14 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        DispatcherUnhandledException += (_, ex) => {
+            System.Windows.MessageBox.Show(
+                ex.Exception.ToString(),
+                "Unhandled Exception",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+            ex.Handled = true;
+        };
         SetupTrayIcon();
         ShowMainWindow();
         _ipc.Start();

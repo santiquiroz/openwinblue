@@ -56,9 +56,7 @@ public partial class DevicesViewModel : ObservableObject
                     if (devKey is null) continue;
 
                     var nameRaw = devKey.GetValue("Name") as byte[];
-                    var name = nameRaw is not null
-                        ? Encoding.Unicode.GetString(nameRaw).TrimEnd('\0', ' ')
-                        : addrKey;
+                    var name = nameRaw is not null ? DecodeBtName(nameRaw) : addrKey;
 
                     if (string.IsNullOrWhiteSpace(name)) name = addrKey;
 
@@ -96,6 +94,23 @@ public partial class DevicesViewModel : ObservableObject
     }
 
     private bool CanApply() => SelectedDevice is not null && _ipc.IsConnected;
+
+    private static string DecodeBtName(byte[] raw)
+    {
+        // Windows BTHPORT stores names as raw BT GAP bytes (UTF-8, null-terminated).
+        // Some older entries may be UTF-16 LE. Try UTF-8 first.
+        var nullIdx = Array.IndexOf(raw, (byte)0);
+        var len = nullIdx >= 0 ? nullIdx : raw.Length;
+        if (len == 0) return string.Empty;
+
+        var utf8 = Encoding.UTF8.GetString(raw, 0, len).Trim();
+        // Heuristic: if result has only printable ASCII/Unicode (not replacement chars), use it
+        if (!utf8.Contains('�') && utf8.Length > 0)
+            return utf8;
+
+        // Fallback: try UTF-16 LE
+        return Encoding.Unicode.GetString(raw).TrimEnd('\0', ' ').Trim();
+    }
 
     private static string DescribeClass(int cod)
     {

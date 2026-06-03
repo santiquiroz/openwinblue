@@ -8,9 +8,6 @@
         Background="{StaticResource BgBrush}"
         WindowStartupLocation="CenterScreen"
         Closing="Window_Closing">
-    <Window.DataContext>
-        <vm:MainViewModel/>
-    </Window.DataContext>
     <Grid>
         <TabControl SelectedIndex="{Binding SelectedTab}" Margin="0">
             <TabItem Header="Status">
