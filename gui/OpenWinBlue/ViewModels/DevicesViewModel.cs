@@ -4,12 +4,20 @@ using Microsoft.Win32;
 using OpenWinBlue.Services;
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
 namespace OpenWinBlue.ViewModels;
 
-public sealed record BluetoothDeviceInfo(string Name, string Address, string Class);
+public sealed record BluetoothDeviceInfo(
+    string   Name,
+    string   Address,
+    string   TypeLabel,
+    string   TypeIcon,
+    bool     IsAudio,
+    string[] EstimatedCodecs,
+    string   DriverStatus);
 
 public partial class DevicesViewModel : ObservableObject
 {
@@ -18,11 +26,27 @@ public partial class DevicesViewModel : ObservableObject
     public ObservableCollection<BluetoothDeviceInfo> Devices { get; } = new();
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelection))]
     [NotifyCanExecuteChangedFor(nameof(ApplyCodecCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallDriverCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetDriverCommand))]
     private BluetoothDeviceInfo? _selectedDevice;
 
-    [ObservableProperty] private string _statusMessage = "Click Refresh to scan paired devices.";
+    [ObservableProperty] private string _statusMessage = "Escaneando dispositivos…";
 
+    public bool HasSelection => SelectedDevice is not null;
+
+    // ── Driver state ──────────────────────────────────────────────────────────
+    public bool OwbDriverInstalled => CheckOwbInstalled();
+
+    private static bool CheckOwbInstalled()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(
+            @"SYSTEM\CurrentControlSet\Services\owb_a2dp");
+        return key is not null;
+    }
+
+    // ── Constructors ──────────────────────────────────────────────────────────
     public DevicesViewModel() : this(new NullIpcSender()) { }
 
     public DevicesViewModel(IIpcSender ipc)
@@ -31,6 +55,7 @@ public partial class DevicesViewModel : ObservableObject
         RefreshCommand.Execute(null);
     }
 
+    // ── Commands ──────────────────────────────────────────────────────────────
     [RelayCommand]
     private void Refresh()
     {
@@ -44,9 +69,11 @@ public partial class DevicesViewModel : ObservableObject
 
             if (key is null)
             {
-                StatusMessage = "No paired Bluetooth devices found (no BT radio or not paired yet).";
+                StatusMessage = "No hay adaptador Bluetooth o no hay dispositivos emparejados.";
                 return;
             }
+
+            var all = new System.Collections.Generic.List<BluetoothDeviceInfo>();
 
             foreach (var addrKey in key.GetSubKeyNames())
             {
@@ -55,31 +82,34 @@ public partial class DevicesViewModel : ObservableObject
                     using var devKey = key.OpenSubKey(addrKey);
                     if (devKey is null) continue;
 
-                    var nameRaw = devKey.GetValue("Name") as byte[];
-                    var name = nameRaw is not null ? DecodeBtName(nameRaw) : addrKey;
-
+                    var nameRaw  = devKey.GetValue("Name") as byte[];
+                    var name     = nameRaw is not null ? DecodeBtName(nameRaw) : addrKey;
                     if (string.IsNullOrWhiteSpace(name)) name = addrKey;
 
-                    var addr = addrKey.Length == 12
-                        ? string.Join(":", Enumerable.Range(0, 6)
-                            .Select(i => addrKey.Substring(i * 2, 2).ToUpper()))
-                        : addrKey.ToUpper();
-
+                    var addr     = FormatMac(addrKey);
                     var classVal = devKey.GetValue("ClassOfDevice");
-                    var cls = classVal is int c ? DescribeClass(c) : "Unknown";
+                    var cod      = classVal is int c ? c : 0;
+                    var (typeLabel, typeIcon, isAudio) = ClassifyDevice(cod);
+                    var codecs   = EstimateCodecs(name, isAudio);
+                    var drvStatus = GetDriverStatus(addrKey);
 
-                    Devices.Add(new BluetoothDeviceInfo(name, addr, cls));
+                    all.Add(new BluetoothDeviceInfo(name, addr, typeLabel, typeIcon, isAudio, codecs, drvStatus));
                 }
                 catch { /* skip malformed entry */ }
             }
 
-            StatusMessage = Devices.Count > 0
-                ? $"{Devices.Count} device(s) found. Select one and click Apply Codec."
-                : "No paired Bluetooth devices found.";
+            // Audio devices first, then others
+            foreach (var d in all.OrderByDescending(d => d.IsAudio).ThenBy(d => d.Name))
+                Devices.Add(d);
+
+            var audioCount = all.Count(d => d.IsAudio);
+            StatusMessage = all.Count > 0
+                ? $"{all.Count} dispositivo(s) — {audioCount} de audio, {all.Count - audioCount} otros."
+                : "No se encontraron dispositivos emparejados.";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error scanning devices: {ex.Message}";
+            StatusMessage = $"Error: {ex.Message}";
         }
     }
 
@@ -87,42 +117,139 @@ public partial class DevicesViewModel : ObservableObject
     private void ApplyCodec()
     {
         if (SelectedDevice is null) return;
-        // Send codec switch to the service — it applies to the active A2DP connection.
-        // The selected device name is informational; A2DP has one active stream at a time.
         _ipc.SendSetCodec("SBC", "switch", 1);
-        StatusMessage = $"Codec applied to {SelectedDevice.Name}. Use the Codec tab to configure parameters.";
+        StatusMessage = $"Codec aplicado a {SelectedDevice.Name}. Configura parámetros en la pestaña Codec.";
     }
+    private bool CanApply() => SelectedDevice?.IsAudio == true && _ipc.IsConnected;
 
-    private bool CanApply() => SelectedDevice is not null && _ipc.IsConnected;
+    [RelayCommand(CanExecute = nameof(CanInstall))]
+    private void InstallDriver()
+    {
+        if (SelectedDevice is null) return;
+        try
+        {
+            var infPath = System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..",
+                "driver", "owb_a2dp.inf");
+            infPath = System.IO.Path.GetFullPath(infPath);
 
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = "pnputil.exe",
+                Arguments       = $"/add-driver \"{infPath}\" /install",
+                Verb            = "runas",
+                UseShellExecute = true,
+            });
+            StatusMessage = $"Instalando driver para {SelectedDevice.Name}…";
+            OnPropertyChanged(nameof(OwbDriverInstalled));
+        }
+        catch (Exception ex) { StatusMessage = $"Error al instalar: {ex.Message}"; }
+    }
+    private bool CanInstall() => SelectedDevice?.IsAudio == true;
+
+    [RelayCommand(CanExecute = nameof(CanReset))]
+    private void ResetDriver()
+    {
+        if (SelectedDevice is null) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = "pnputil.exe",
+                Arguments       = "/delete-driver owb_a2dp.inf /uninstall /force",
+                Verb            = "runas",
+                UseShellExecute = true,
+            });
+            StatusMessage = $"Restaurando driver de Windows para {SelectedDevice.Name}…";
+            OnPropertyChanged(nameof(OwbDriverInstalled));
+        }
+        catch (Exception ex) { StatusMessage = $"Error al restaurar: {ex.Message}"; }
+    }
+    private bool CanReset() => SelectedDevice?.IsAudio == true;
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
     private static string DecodeBtName(byte[] raw)
     {
-        // Windows BTHPORT stores names as raw BT GAP bytes (UTF-8, null-terminated).
-        // Some older entries may be UTF-16 LE. Try UTF-8 first.
         var nullIdx = Array.IndexOf(raw, (byte)0);
         var len = nullIdx >= 0 ? nullIdx : raw.Length;
         if (len == 0) return string.Empty;
-
         var utf8 = Encoding.UTF8.GetString(raw, 0, len).Trim();
-        // Heuristic: if result has only printable ASCII/Unicode (not replacement chars), use it
-        if (!utf8.Contains('�') && utf8.Length > 0)
-            return utf8;
-
-        // Fallback: try UTF-16 LE
-        return Encoding.Unicode.GetString(raw).TrimEnd('\0', ' ').Trim();
+        return !utf8.Contains('�') && utf8.Length > 0
+            ? utf8
+            : Encoding.Unicode.GetString(raw).TrimEnd('\0', ' ').Trim();
     }
 
-    private static string DescribeClass(int cod)
+    private static string FormatMac(string addrKey) =>
+        addrKey.Length == 12
+            ? string.Join(":", Enumerable.Range(0, 6).Select(i => addrKey.Substring(i * 2, 2).ToUpper()))
+            : addrKey.ToUpper();
+
+    private static (string label, string icon, bool isAudio) ClassifyDevice(int cod)
     {
         int major = (cod >> 8) & 0x1F;
+        int minor = (cod >> 2) & 0x3F;
         return major switch {
-            1  => "Computer",
-            2  => "Phone",
-            4  => "Audio / Headset",
-            5  => "Peripheral",
-            6  => "Imaging",
-            _ => $"Class 0x{cod:X}"
+            4 => minor switch {
+                1 or 2  => ("Auricular / Manos libres", "🎧", true),
+                5       => ("Altavoz",                  "🔊", true),
+                6       => ("Auriculares",               "🎧", true),
+                7       => ("Audio portátil",            "🎵", true),
+                _       => ("Dispositivo de audio",      "🎵", true),
+            },
+            2 => ("Teléfono",          "📱", false),
+            1 => ("Computadora",       "💻", false),
+            5 => ("Periférico",        "🖱️", false),
+            _ => ("Otro dispositivo",  "🔷", false),
         };
+    }
+
+    private static string[] EstimateCodecs(string name, bool isAudio)
+    {
+        if (!isAudio) return Array.Empty<string>();
+
+        var n   = name.ToLowerInvariant();
+        var res = new System.Collections.Generic.List<string> { "SBC" }; // mandatory
+
+        // LDAC — Sony
+        if (n.Contains("sony") || n.Contains("wh-") || n.Contains("wf-") ||
+            n.Contains("linkbuds") || n.Contains("xm"))
+            res.Add("LDAC");
+
+        // AAC — Apple, modern headsets
+        if (n.Contains("airpods") || n.Contains("beats") || n.Contains("jbl") ||
+            n.Contains("jabra") || n.Contains("plantronics") || n.Contains("poly") ||
+            n.Contains("bose") || n.Contains("samsung") || n.Contains("buds") ||
+            n.Contains("galaxy"))
+            res.Add("AAC");
+
+        // aptX — Qualcomm-powered
+        if (n.Contains("jabra") || n.Contains("sennheiser") || n.Contains("audio-technica") ||
+            n.Contains("anker") || n.Contains("soundcore") || n.Contains("oneplus") ||
+            n.Contains("lg ") || n.Contains("pixel") || n.Contains("az09") ||
+            n.Contains("recon"))
+            res.Add("aptX");
+
+        // aptX-HD — premium tier
+        if (n.Contains("jabra") || n.Contains("sennheiser") || n.Contains("b&w") ||
+            n.Contains("bowers") || n.Contains("recon"))
+            res.Add("aptX-HD");
+
+        // LC3 — LE Audio generation
+        if (n.Contains("galaxy buds3") || n.Contains("airpods pro 2") ||
+            n.Contains("le audio") || n.Contains("lc3"))
+            res.Add("LC3");
+
+        return res.ToArray();
+    }
+
+    private static string GetDriverStatus(string addrKey)
+    {
+        // Check if owb_a2dp service is globally registered
+        using var svcKey = Registry.LocalMachine.OpenSubKey(
+            @"SYSTEM\CurrentControlSet\Services\owb_a2dp");
+        return svcKey is not null
+            ? "OpenWinBlue instalado"
+            : "Driver Windows (btavchdt.sys)";
     }
 
     private sealed class NullIpcSender : IIpcSender
