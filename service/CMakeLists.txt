@@ -145,6 +145,7 @@ target_compile_options(owb_service PRIVATE
 )
 target_link_libraries(owb_service PRIVATE
     owb_codec_factory owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_ai_pipeline
     ole32 oleaut32 uuid Mmdevapi
 )
 

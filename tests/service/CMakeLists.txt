@@ -7,6 +7,7 @@ add_executable(owb_service_tests
     ipc_test.cpp
     hfp_guard_test.cpp
     a2dp_stream_test.cpp
+    ai_pipeline_test.cpp
 )
 
 target_link_libraries(owb_service_tests PRIVATE
@@ -19,12 +20,14 @@ target_link_libraries(owb_service_tests PRIVATE
     owb_hfp_guard
     owb_ipc_server
     owb_a2dp_stream
+    owb_ai_pipeline
     ole32 oleaut32
 )
 
 target_include_directories(owb_service_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/service/codecs
     ${CMAKE_SOURCE_DIR}/service/src
+    ${CMAKE_SOURCE_DIR}/service/ai
     ${CMAKE_SOURCE_DIR}/third-party/libsbc
     ${CMAKE_SOURCE_DIR}/third-party/libsbc-compat
     ${CMAKE_SOURCE_DIR}/third-party/libldac/inc
