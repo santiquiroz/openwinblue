@@ -240,7 +240,7 @@ NTSTATUS AvdtpSetPreferredCodec(
         UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
         NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SUSPEND, &seid, 1u);
         if (!NT_SUCCESS(st)) return st;
-        DevExt->Avdtp.State = AvdtpStateOpen;
+        DevExt->Avdtp.State = AvdtpStateIdle;
         return AvdtpConnect(DevExt);
     }
     return STATUS_SUCCESS;
