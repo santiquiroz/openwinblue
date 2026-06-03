@@ -9,6 +9,7 @@
 #include "a2dp_stream.h"
 #include "owb_ioctl.h"
 #include <cstring>
+#include <string_view>
 
 namespace owb {
 
@@ -104,6 +105,44 @@ bool IpcServer::serve_one() {
                 if (hdr_ok && written == sizeof(reply)) {
                     WriteFile(impl_->pipe, &status, sizeof(status), &written, nullptr);
                 }
+                client_done = true;
+                break;
+            }
+            case ipc::MsgType::SetCodec: {
+                // Read SetCodecPayload (codec_name + param_key + param_value)
+                if (hdr.payload_len < sizeof(ipc::SetCodecPayload)) {
+                    client_done = true;
+                    break;
+                }
+                ipc::SetCodecPayload codec_payload{};
+                DWORD payload_read = 0;
+                ReadFile(impl_->pipe, &codec_payload,
+                         sizeof(codec_payload), &payload_read, nullptr);
+
+                // Resolve codec name string → OWB_CODEC_* ID
+                uint32_t codec_id = OWB_CODEC_SBC;  // default
+                if      (std::strncmp(codec_payload.codec_name, "LDAC",    4) == 0) codec_id = OWB_CODEC_LDAC;
+                else if (std::strncmp(codec_payload.codec_name, "aptX-HD", 7) == 0) codec_id = OWB_CODEC_APTXHD;
+                else if (std::strncmp(codec_payload.codec_name, "aptX",    4) == 0) codec_id = OWB_CODEC_APTX;
+
+                // Forward to driver via A2dpStream
+                bool success = false;
+                if (impl_->stream_) {
+                    const size_t key_len = strnlen(codec_payload.param_key,
+                                                   sizeof(codec_payload.param_key));
+                    success = impl_->stream_->set_codec_config(
+                        codec_id,
+                        std::string_view(codec_payload.param_key, key_len),
+                        codec_payload.param_value);
+                }
+
+                // Reply with CodecAck
+                ipc::MsgHeader ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };
+                ipc::AckPayload ack_payload{ success ? uint8_t{1} : uint8_t{0}, {0u, 0u, 0u} };
+                DWORD written = 0;
+                BOOL ack_ok = WriteFile(impl_->pipe, &ack, sizeof(ack), &written, nullptr);
+                if (ack_ok && written == sizeof(ack))
+                    WriteFile(impl_->pipe, &ack_payload, sizeof(ack_payload), &written, nullptr);
                 client_done = true;
                 break;
             }

@@ -56,3 +56,41 @@ TEST(IpcServer, StopIsIdempotent) {
     server.stop();
     server.stop();  // must not crash
 }
+
+TEST(IpcServer, SetCodec_WhenNotConnected_RepliesWithCodecAck) {
+    owb::IpcServer server(nullptr);  // null stream — stub mode
+    ASSERT_TRUE(server.start());
+
+    std::thread t([&server] { server.serve_one(); });
+
+    if (!WaitNamedPipeW(owb::ipc::kPipeName, 3000)) {
+        t.join();
+        GTEST_SKIP() << "Pipe not available";
+    }
+
+    HANDLE pipe = CreateFileW(owb::ipc::kPipeName,
+        GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) { t.join(); GTEST_SKIP(); }
+
+    // Build SetCodec message
+    owb::ipc::MsgHeader hdr{ owb::ipc::MsgType::SetCodec,
+                              sizeof(owb::ipc::SetCodecPayload) };
+    owb::ipc::SetCodecPayload payload{};
+    strncpy_s(payload.codec_name, sizeof(payload.codec_name), "LDAC",   _TRUNCATE);
+    strncpy_s(payload.param_key,  sizeof(payload.param_key),  "switch", _TRUNCATE);
+    payload.param_value = 1;
+
+    DWORD written = 0;
+    WriteFile(pipe, &hdr,     sizeof(hdr),     &written, nullptr);
+    WriteFile(pipe, &payload, sizeof(payload), &written, nullptr);
+
+    // Read CodecAck reply
+    owb::ipc::MsgHeader reply{};
+    DWORD read_bytes = 0;
+    BOOL ok = ReadFile(pipe, &reply, sizeof(reply), &read_bytes, nullptr);
+    CloseHandle(pipe);
+    t.join();
+
+    EXPECT_TRUE(ok);
+    if (ok) EXPECT_EQ(reply.type, owb::ipc::MsgType::CodecAck);
+}
