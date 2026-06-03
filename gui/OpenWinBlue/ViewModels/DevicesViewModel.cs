@@ -88,8 +88,8 @@ public partial class DevicesViewModel : ObservableObject
 
                     var addr     = FormatMac(addrKey);
                     var classVal = devKey.GetValue("ClassOfDevice");
-                    var cod      = classVal is int c ? c : 0;
-                    var (typeLabel, typeIcon, isAudio) = ClassifyDevice(cod);
+                    var cod      = classVal is int ci ? ci : classVal is uint u ? (int)u : 0;
+                    var (typeLabel, typeIcon, isAudio) = ClassifyDevice(cod, name);
                     var codecs   = EstimateCodecs(name, isAudio);
                     var drvStatus = GetDriverStatus(addrKey);
 
@@ -184,22 +184,43 @@ public partial class DevicesViewModel : ObservableObject
             ? string.Join(":", Enumerable.Range(0, 6).Select(i => addrKey.Substring(i * 2, 2).ToUpper()))
             : addrKey.ToUpper();
 
-    private static (string label, string icon, bool isAudio) ClassifyDevice(int cod)
+    private static (string label, string icon, bool isAudio) ClassifyDevice(int cod, string name)
     {
+        // Windows BTHPORT often doesn't store ClassOfDevice — use name heuristics first.
+        var n = name.ToLowerInvariant();
+
+        // Clearly NOT audio
+        if (n.Contains("controller") || n.Contains("keyboard") || n.Contains("mouse") ||
+            n.Contains("teclado") || n.Contains("raton"))
+            return ("Periférico", "🖱️", false);
+
+        if (n.Contains("phone") || n.Contains("iphone") || n.Contains("android") ||
+            n.Contains("galaxy s") || n.Contains("pixel ") || n.Contains("móvil") ||
+            n.Contains("ultra de "))
+            return ("Teléfono / Móvil", "📱", false);
+
+        // Clearly audio by name
+        if (n.Contains("headset") || n.Contains("headphone") || n.Contains("auricular") ||
+            n.Contains("earbud") || n.Contains("earphone") || n.Contains("buds") ||
+            n.Contains("cloud ") || n.Contains("recon ") || n.Contains("arctis") ||
+            n.Contains("kraken") || n.Contains("razer") || n.Contains("corsair") ||
+            n.Contains("hyperx") || n.Contains("jabra") || n.Contains("sennheiser") ||
+            n.Contains("bose") || n.Contains("jbl") || n.Contains("airpods") ||
+            n.Contains("beats") || n.Contains("wh-") || n.Contains("wf-") ||
+            n.Contains("linkbuds") || n.Contains("sony wh") || n.Contains("soundcore") ||
+            n.Contains("anker") || n.Contains("az09") || n.Contains("oficina") ||
+            n.Contains("office") || n.Contains("par de") || n.Contains("pro ") ||
+            n.Contains(" pro") || n.Contains("speaker") || n.Contains("altavoz"))
+            return ("Auriculares / Audio", "🎧", true);
+
+        // Fallback: COD if available
         int major = (cod >> 8) & 0x1F;
-        int minor = (cod >> 2) & 0x3F;
         return major switch {
-            4 => minor switch {
-                1 or 2  => ("Auricular / Manos libres", "🎧", true),
-                5       => ("Altavoz",                  "🔊", true),
-                6       => ("Auriculares",               "🎧", true),
-                7       => ("Audio portátil",            "🎵", true),
-                _       => ("Dispositivo de audio",      "🎵", true),
-            },
-            2 => ("Teléfono",          "📱", false),
-            1 => ("Computadora",       "💻", false),
-            5 => ("Periférico",        "🖱️", false),
-            _ => ("Otro dispositivo",  "🔷", false),
+            4 => ("Dispositivo de audio",  "🎵", true),
+            2 => ("Teléfono",              "📱", false),
+            1 => ("Computadora",           "💻", false),
+            5 => ("Periférico",            "🖱️", false),
+            _ => ("Desconocido",           "🔷", false),
         };
     }
 
