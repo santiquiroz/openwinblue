@@ -21,7 +21,7 @@
 #include "hfp_guard.h"
 #include "ipc_server.h"
 #include "a2dp_stream.h"
-#include "codec_sbc.h"
+#include "codec_factory.h"
 
 namespace {
 std::atomic<bool> g_running{true};
@@ -42,9 +42,14 @@ int main() {
     owb::HfpGuard     hfp_guard;
     owb::A2dpStream   a2dp;
     owb::IpcServer    ipc(&a2dp);
-    owb::CodecSbc     codec;  // Phase 2c feeds this into the a2dp send loop
 
     std::puts("OpenWinBlue service v0.3 starting\xe2\x80\xa6");
+
+    // Instantiate default codec (SBC). User can switch via IPC SetCodec → OWB_IOCTL_SET_CODEC_CONFIG.
+    // Phase 5b: this feeds into the A2DP encode→stream pipeline.
+    uint32_t active_codec_id = OWB_CODEC_SBC;
+    auto codec = owb::CodecFactory::create(active_codec_id);
+    std::printf("[OK]  Codec: %s\n", std::string(codec->name()).c_str());
 
     if (!capture.start()) {
         std::puts("[WARN] WASAPI loopback unavailable");
