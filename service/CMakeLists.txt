@@ -51,6 +51,32 @@ target_compile_options(owb_codec_aptx PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── libldac static library (Sony LDAC encoder, Apache 2.0) ──────────────────
+add_library(owb_ldac STATIC
+    ${CMAKE_SOURCE_DIR}/third-party/libldac/src/ldacBT.c
+    ${CMAKE_SOURCE_DIR}/third-party/libldac/src/ldaclib.c
+)
+target_include_directories(owb_ldac PUBLIC
+    ${CMAKE_SOURCE_DIR}/third-party/libldac/inc
+    ${CMAKE_SOURCE_DIR}/third-party/libldac/src
+    ${CMAKE_SOURCE_DIR}/third-party/libldac-compat
+)
+target_compile_options(owb_ldac PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W0 /utf-8 /FIldac_compat.h>
+)
+
+# ── LDAC codec C++ wrapper ────────────────────────────────────────────────────
+add_library(owb_codec_ldac STATIC
+    codecs/codec_ldac.cpp
+)
+target_include_directories(owb_codec_ldac PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+)
+target_link_libraries(owb_codec_ldac PUBLIC owb_ldac)
+target_compile_options(owb_codec_ldac PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── HFP Guard static library ─────────────────────────────────────────────────
 add_library(owb_hfp_guard STATIC
     src/hfp_guard.cpp
@@ -103,7 +129,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
-    owb_codec_sbc owb_codec_aptx owb_hfp_guard owb_ipc_server owb_a2dp_stream
+    owb_codec_sbc owb_codec_aptx owb_codec_ldac owb_hfp_guard owb_ipc_server owb_a2dp_stream
     ole32 oleaut32 uuid Mmdevapi
 )
 
