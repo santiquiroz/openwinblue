@@ -32,6 +32,7 @@ add_library(owb_rnnoise STATIC
     ${OWB_RNNOISE_MODEL_SOURCES}
 )
 target_include_directories(owb_rnnoise PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}               # stub rnnoise_data.h (CI: not in submodule)
     ${CMAKE_SOURCE_DIR}/third-party/rnnoise/include
     ${CMAKE_SOURCE_DIR}/third-party/rnnoise/src
 )
