@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="270"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -18,14 +18,14 @@
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                 <TextBlock Text="Dispositivos BT" FontWeight="Bold" FontSize="13"
                            VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <Button Content="⟳" Command="{Binding RefreshCommand}"
-                        Padding="8,3" FontSize="13"/>
+                <Button Content="⟳" Command="{Binding RefreshCommand}" Padding="8,3" FontSize="13"/>
             </StackPanel>
 
             <ListBox Grid.Row="1"
                      ItemsSource="{Binding Devices}"
                      SelectedItem="{Binding SelectedDevice, Mode=TwoWay}"
-                     BorderThickness="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                     BorderThickness="1"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid Margin="0,4">
@@ -33,8 +33,7 @@
                                 <ColumnDefinition Width="28"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding TypeIcon}"
-                                       FontSize="16" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="0" Text="{Binding TypeIcon}" FontSize="16" VerticalAlignment="Center">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Opacity" Value="1"/>
@@ -59,8 +58,7 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <TextBlock Text="{Binding Address}" FontSize="10"
-                                           FontFamily="Consolas"
+                                <TextBlock Text="{Binding Address}" FontSize="10" FontFamily="Consolas"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                             </StackPanel>
                         </Grid>
@@ -76,7 +74,7 @@
         <!-- ── RIGHT: device detail ───────────────────────────────────────── -->
         <Grid Grid.Column="1" Margin="6,12,12,12">
 
-            <!-- No selection placeholder -->
+            <!-- No selection placeholder (rendered on top via z-order) -->
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <StackPanel.Style>
                     <Style TargetType="StackPanel">
@@ -95,170 +93,283 @@
                            HorizontalAlignment="Center"/>
             </StackPanel>
 
-            <!-- Device detail panel -->
-            <StackPanel>
-                <StackPanel.Style>
-                    <Style TargetType="StackPanel">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding HasSelection}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </StackPanel.Style>
-
-                <!-- Name + type -->
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                    <TextBlock Text="{Binding SelectedDevice.TypeIcon}" FontSize="24"
-                               VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <StackPanel>
-                        <TextBlock Text="{Binding SelectedDevice.Name}"
-                                   FontSize="16" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding SelectedDevice.TypeLabel}"
-                                   FontSize="11"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                    </StackPanel>
-                </StackPanel>
-
-                <TextBlock Text="{Binding SelectedDevice.Address}"
-                           FontFamily="Consolas" FontSize="11"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           Margin="0,0,0,12"/>
-
-                <Separator/>
-
-                <!-- Driver status -->
-                <TextBlock Text="DRIVER" FontSize="10" FontWeight="Bold"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           Margin="0,12,0,6"/>
-
-                <Border CornerRadius="6" Padding="12,8" Margin="0,0,0,8"
-                        Background="{StaticResource SurfaceBrush}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="{Binding SelectedDevice.DriverStatus}"
-                                       FontWeight="SemiBold" FontSize="12"/>
-                            <TextBlock FontSize="10" Margin="0,2,0,0"
-                                       Foreground="{StaticResource TextSecondaryBrush}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Driver predeterminado de Windows (btavchdt.sys). Solo SBC disponible."/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding OwbDriverInstalled}" Value="True">
-                                                <Setter Property="Text" Value="OpenWinBlue activo — LDAC, aptX-HD, AAC, LC3 disponibles."/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-                        <!-- Status indicator dot -->
-                        <Ellipse Grid.Column="1" Width="10" Height="10"
-                                 VerticalAlignment="Center" Margin="8,0,0,0">
-                            <Ellipse.Style>
-                                <Style TargetType="Ellipse">
-                                    <Setter Property="Fill" Value="#EF4444"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding OwbDriverInstalled}" Value="True">
-                                            <Setter Property="Fill" Value="#22C55E"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Ellipse.Style>
-                        </Ellipse>
-                    </Grid>
-                </Border>
-
-                <!-- Test signing warning -->
-                <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,8"
-                        Background="#1F2937">
-                    <Border.Style>
-                        <Style TargetType="Border">
+            <!-- Device detail (scrollable, always present but inner StackPanel collapses) -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding TestSigningEnabled}" Value="False">
+                                <DataTrigger Binding="{Binding HasSelection}" Value="True">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </Border.Style>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="⚠ " Foreground="#F59E0B" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel.Style>
+
+                    <!-- ── Header ─────────────────────────────────────────── -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <TextBlock Text="{Binding SelectedDevice.TypeIcon}" FontSize="24"
+                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <StackPanel>
-                            <TextBlock Text="Test Signing Mode desactivado" FontWeight="SemiBold"
-                                       Foreground="#F59E0B" FontSize="12"/>
-                            <TextBlock Text="Necesario para instalar el driver de desarrollo."
-                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"/>
+                            <TextBlock Text="{Binding SelectedDevice.Name}"
+                                       FontSize="16" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding SelectedDevice.TypeLabel}"
+                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
                         </StackPanel>
-                        <Button Content="Activar (requiere reinicio)"
-                                Command="{Binding EnableTestSigningCommand}"
-                                Margin="12,0,0,0" Padding="8,3" FontSize="11"
-                                VerticalAlignment="Center"/>
                     </StackPanel>
-                </Border>
 
-                <!-- Driver actions -->
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                    <Button Content="Instalar OpenWinBlue"
-                            Command="{Binding InstallDriverCommand}"
-                            Padding="10,5" Margin="0,0,8,0"/>
-                    <Button Content="Restaurar driver Windows"
-                            Command="{Binding ResetDriverCommand}"
-                            Padding="10,5"/>
+                    <TextBlock Text="{Binding SelectedDevice.Address}"
+                               FontFamily="Consolas" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,12"/>
+
+                    <Separator/>
+
+                    <!-- ══ DRIVER ═══════════════════════════════════════════ -->
+                    <TextBlock Text="DRIVER" FontSize="10" FontWeight="Bold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,12,0,6"/>
+
+                    <!-- Status card -->
+                    <Border CornerRadius="6" Padding="12,8" Margin="0,0,0,8"
+                            Background="{StaticResource SurfaceBrush}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding SelectedDevice.DriverStatus}"
+                                           FontWeight="SemiBold" FontSize="12"/>
+                                <TextBlock FontSize="10" Margin="0,2,0,0"
+                                           Foreground="{StaticResource TextSecondaryBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="Driver predeterminado de Windows (btavchdt.sys). Solo SBC."/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding OwbDriverInstalled}" Value="True">
+                                                    <Setter Property="Text" Value="OpenWinBlue activo — LDAC, aptX-HD, AAC, LC3 disponibles."/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                            <Ellipse Grid.Column="1" Width="10" Height="10"
+                                     VerticalAlignment="Center" Margin="8,0,0,0">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="#EF4444"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding OwbDriverInstalled}" Value="True">
+                                                <Setter Property="Fill" Value="#22C55E"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                        </Grid>
+                    </Border>
+
+                    <!-- Test Signing warning (inline, only when off) -->
+                    <Border CornerRadius="4" Padding="10,7" Margin="0,0,0,8"
+                            Background="#1F2937">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding TestSigningEnabled}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⚠ " Foreground="#F59E0B" FontSize="13" VerticalAlignment="Center"/>
+                            <StackPanel>
+                                <TextBlock Text="Test Signing Mode desactivado" FontWeight="SemiBold"
+                                           Foreground="#F59E0B" FontSize="12"/>
+                                <TextBlock Text="Necesario para instalar el driver de desarrollo."
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"/>
+                            </StackPanel>
+                            <Button Content="Activar (requiere reinicio)"
+                                    Command="{Binding EnableTestSigningCommand}"
+                                    Margin="12,0,0,0" Padding="8,3" FontSize="11"
+                                    VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Single contextual button: Install vs Restore -->
+                    <Button Margin="0,0,0,16" Padding="10,5" HorizontalAlignment="Left">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Setter Property="Content" Value="Instalar OpenWinBlue"/>
+                                <Setter Property="Command" Value="{Binding InstallDriverCommand}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding OwbDriverInstalled}" Value="True">
+                                        <Setter Property="Content" Value="Restaurar driver de Windows"/>
+                                        <Setter Property="Command" Value="{Binding ResetDriverCommand}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <Separator/>
+
+                    <!-- ══ AUDIO ═════════════════════════════════════════════ -->
+                    <TextBlock Text="AUDIO" FontSize="10" FontWeight="Bold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,12,0,6"/>
+
+                    <!-- Non-audio device message -->
+                    <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
+                               Margin="0,0,0,12"
+                               Text="Este dispositivo no soporta A2DP. Las funciones de audio no aplican.">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SelectedDevice.IsAudio}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Audio device — driver not yet installed -->
+                    <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
+                               TextWrapping="Wrap" Margin="0,0,0,12"
+                               Text="Instala el driver OpenWinBlue para gestionar el codec y el bitrate en tiempo real.">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding SelectedDevice.IsAudio}" Value="True"/>
+                                            <Condition Binding="{Binding OwbDriverInstalled}" Value="False"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Audio device — OWB installed → codec + bitrate controls -->
+                    <StackPanel Margin="0,0,0,12">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding SelectedDevice.IsAudio}" Value="True"/>
+                                            <Condition Binding="{Binding OwbDriverInstalled}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <TextBlock Text="Codec" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,0,6"/>
+
+                        <!-- Codec picker — styled as segmented chips -->
+                        <ListBox ItemsSource="{Binding SelectedDevice.EstimatedCodecs}"
+                                 SelectedItem="{Binding SelectedCodec, Mode=TwoWay}"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 Margin="0,0,0,12">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,0,6,4"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Root" CornerRadius="4" Padding="10,4"
+                                                        Background="{StaticResource SurfaceAltBrush}">
+                                                    <TextBlock x:Name="CodecLabel" Text="{Binding}"
+                                                               FontSize="12" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource AccentBrush}"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Root" Property="Background"
+                                                                Value="{StaticResource AccentBrush}"/>
+                                                        <Setter TargetName="CodecLabel" Property="Foreground"
+                                                                Value="{StaticResource BgBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Root" Property="Background"
+                                                                Value="{StaticResource BorderBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+
+                        <TextBlock Text="Bitrate" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,0,6"/>
+
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="72"/>
+                            </Grid.ColumnDefinitions>
+                            <Slider Grid.Column="0" Minimum="64" Maximum="990" LargeChange="64"
+                                    Value="{Binding SelectedBitrate, Mode=TwoWay}"
+                                    VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock FontSize="11" Text="{Binding SelectedBitrate}"/>
+                                <TextBlock FontSize="11" Text=" kbps"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Button Content="Aplicar configuración"
+                                Command="{Binding ApplyCodecCommand}"
+                                Padding="10,5" HorizontalAlignment="Left"/>
+                    </StackPanel>
+
+                    <Separator/>
+
+                    <!-- ══ MEJORAS IA ══════════════════════════════════════ -->
+                    <TextBlock Text="MEJORAS IA" FontSize="10" FontWeight="Bold"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,12,0,6"/>
+
+                    <StackPanel IsEnabled="False" Margin="0,0,0,6">
+                        <CheckBox Content="Reducción de ruido"
+                                  IsChecked="{Binding IsNoiseCancellationEnabled}"
+                                  Margin="0,0,0,8"/>
+                        <CheckBox Content="Mejora de calidad de voz"
+                                  IsChecked="{Binding IsVoiceEnhancementEnabled}"
+                                  Margin="0,0,0,8"/>
+                    </StackPanel>
+
+                    <TextBlock Text="Próximamente — las mejoras de IA estarán disponibles en versiones futuras."
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="10"
+                               TextWrapping="Wrap" Margin="0,0,0,16"/>
+
                 </StackPanel>
-
-                <Separator/>
-
-                <!-- Codec support -->
-                <TextBlock Text="CODECS ESTIMADOS" FontSize="10" FontWeight="Bold"
-                           Foreground="{StaticResource TextSecondaryBrush}"
-                           Margin="0,12,0,8"/>
-
-                <ItemsControl ItemsSource="{Binding SelectedDevice.EstimatedCodecs}"
-                              Margin="0,0,0,12">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border CornerRadius="4" Padding="8,3" Margin="0,0,6,6"
-                                    Background="{StaticResource SurfaceAltBrush}">
-                                <TextBlock Text="{Binding}" FontSize="11"
-                                           Foreground="{StaticResource AccentBrush}"
-                                           FontWeight="SemiBold"/>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <TextBlock FontSize="10" Margin="0,0,0,12" TextWrapping="Wrap"
-                           Foreground="{StaticResource TextSecondaryBrush}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Text" Value="Este dispositivo no es de audio. Los codecs A2DP no aplican."/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding SelectedDevice.IsAudio}" Value="True">
-                                    <Setter Property="Text" Value="Estimación basada en nombre del dispositivo. SBC es obligatorio en todos los dispositivos A2DP."/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-
-                <Separator/>
-
-                <!-- Apply codec -->
-                <Button Content="Aplicar codec activo a este dispositivo"
-                        Command="{Binding ApplyCodecCommand}"
-                        Margin="0,12,0,0" Padding="12,6" HorizontalAlignment="Left"/>
-            </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

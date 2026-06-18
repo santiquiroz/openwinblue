@@ -1,54 +1,63 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Win32;
 using OpenWinBlue.Services;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using WpfApp = System.Windows.Application;
+using WpfMsg = System.Windows.MessageBox;
+using WpfMsgButton = System.Windows.MessageBoxButton;
+using WpfMsgImage  = System.Windows.MessageBoxImage;
+using WpfMsgResult = System.Windows.MessageBoxResult;
 
 namespace OpenWinBlue.ViewModels;
 
 public sealed record BluetoothDeviceInfo(
     string   Name,
     string   Address,
+    string   AddrKey,
     string   TypeLabel,
     string   TypeIcon,
     bool     IsAudio,
     string[] EstimatedCodecs,
-    string   DriverStatus);
+    string   DriverStatus,
+    bool     UsesOwbDriver,
+    bool     IsConnected);
 
 public partial class DevicesViewModel : ObservableObject
 {
     private readonly IIpcSender _ipc;
 
+    // A2DP profile devices keyed by MAC without colons (AABBCCDDEEFF), uppercase.
+    private Dictionary<string, A2dpInfo> _a2dpCache = [];
+
     public ObservableCollection<BluetoothDeviceInfo> Devices { get; } = new();
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
+    [NotifyPropertyChangedFor(nameof(OwbDriverInstalled))]
     [NotifyCanExecuteChangedFor(nameof(ApplyCodecCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallDriverCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetDriverCommand))]
     private BluetoothDeviceInfo? _selectedDevice;
 
     [ObservableProperty] private string _statusMessage = "Escaneando dispositivos…";
+    [ObservableProperty] private string _selectedCodec  = "SBC";
+    [ObservableProperty] private int    _selectedBitrate = 320;
+    [ObservableProperty] private bool   _isNoiseCancellationEnabled;
+    [ObservableProperty] private bool   _isVoiceEnhancementEnabled;
 
-    public bool HasSelection => SelectedDevice is not null;
+    public bool HasSelection      => SelectedDevice is not null;
+    public bool OwbDriverInstalled => SelectedDevice?.UsesOwbDriver == true;
+    public bool TestSigningEnabled => CheckTestSigning();
 
-    // ── Driver state ──────────────────────────────────────────────────────────
-    public bool OwbDriverInstalled  => CheckOwbInstalled();
-    public bool TestSigningEnabled  => CheckTestSigning();
-
-    private static bool CheckOwbInstalled()
-    {
-        using var key = Registry.LocalMachine.OpenSubKey(
-            @"SYSTEM\CurrentControlSet\Services\owb_a2dp");
-        return key is not null;
-    }
-
-    // NtQuerySystemInformation works without elevation, unlike bcdedit /enum.
+    // ── Test-signing check ────────────────────────────────────────────────────
     [StructLayout(LayoutKind.Sequential)]
     private struct SYSTEM_CODEINTEGRITY_INFORMATION
     {
@@ -65,8 +74,8 @@ public partial class DevicesViewModel : ObservableObject
 
     private static bool CheckTestSigning()
     {
-        const int SystemCodeIntegrityInformation = 103;
-        const uint CODEINTEGRITY_OPTION_TESTSIGN = 0x00000002;
+        const int  SystemCodeIntegrityInformation   = 103;
+        const uint CODEINTEGRITY_OPTION_TESTSIGN    = 0x00000002;
         try
         {
             var info = new SYSTEM_CODEINTEGRITY_INFORMATION
@@ -80,6 +89,104 @@ public partial class DevicesViewModel : ObservableObject
         catch { return false; }
     }
 
+    // ── Win32 Bluetooth device enumeration API ────────────────────────────────
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEMTIME
+    {
+        public ushort Year, Month, DayOfWeek, Day, Hour, Minute, Second, Milliseconds;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct BLUETOOTH_DEVICE_INFO
+    {
+        public uint  dwSize;
+        public ulong Address;
+        public uint  ulClassofDevice;
+        [MarshalAs(UnmanagedType.Bool)] public bool fConnected;
+        [MarshalAs(UnmanagedType.Bool)] public bool fRemembered;
+        [MarshalAs(UnmanagedType.Bool)] public bool fAuthenticated;
+        public SYSTEMTIME stLastSeen;
+        public SYSTEMTIME stLastUsed;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 248)]
+        public string szName;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct BLUETOOTH_DEVICE_SEARCH_PARAMS
+    {
+        public uint  dwSize;
+        [MarshalAs(UnmanagedType.Bool)] public bool fReturnAuthenticated;
+        [MarshalAs(UnmanagedType.Bool)] public bool fReturnRemembered;
+        [MarshalAs(UnmanagedType.Bool)] public bool fReturnUnknown;
+        [MarshalAs(UnmanagedType.Bool)] public bool fReturnConnected;
+        [MarshalAs(UnmanagedType.Bool)] public bool fIssueInquiry;
+        public byte  cTimeoutMultiplier;
+        public IntPtr hRadio;
+    }
+
+    [DllImport("bthprops.cpl", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr BluetoothFindFirstDevice(
+        ref BLUETOOTH_DEVICE_SEARCH_PARAMS pSearchParams,
+        ref BLUETOOTH_DEVICE_INFO pbtdi);
+
+    [DllImport("bthprops.cpl", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool BluetoothFindNextDevice(
+        IntPtr hFind,
+        ref BLUETOOTH_DEVICE_INFO pbtdi);
+
+    [DllImport("bthprops.cpl", SetLastError = true)]
+    private static extern bool BluetoothFindDeviceClose(IntPtr hFind);
+
+    private static Dictionary<string, (string name, int cod, bool isConnected)> QueryBtDevices()
+    {
+        var result = new Dictionary<string, (string, int, bool)>(StringComparer.OrdinalIgnoreCase);
+
+        var info = new BLUETOOTH_DEVICE_INFO
+        {
+            dwSize = (uint)Marshal.SizeOf<BLUETOOTH_DEVICE_INFO>(),
+            szName = string.Empty,
+        };
+        var searchParams = new BLUETOOTH_DEVICE_SEARCH_PARAMS
+        {
+            dwSize               = (uint)Marshal.SizeOf<BLUETOOTH_DEVICE_SEARCH_PARAMS>(),
+            fReturnAuthenticated = false,
+            fReturnRemembered    = false,
+            fReturnUnknown       = false,
+            fReturnConnected     = true,
+            fIssueInquiry        = false,
+            cTimeoutMultiplier   = 0,
+            hRadio               = IntPtr.Zero,
+        };
+
+        var hFind = BluetoothFindFirstDevice(ref searchParams, ref info);
+        if (hFind == IntPtr.Zero) return result;
+
+        try
+        {
+            do
+            {
+                var addrKey = BtAddressToKey(info.Address);
+                result[addrKey] = (info.szName ?? string.Empty, (int)info.ulClassofDevice, info.fConnected);
+                info = new BLUETOOTH_DEVICE_INFO
+                {
+                    dwSize = (uint)Marshal.SizeOf<BLUETOOTH_DEVICE_INFO>(),
+                    szName = string.Empty,
+                };
+            }
+            while (BluetoothFindNextDevice(hFind, ref info));
+        }
+        finally { BluetoothFindDeviceClose(hFind); }
+
+        return result;
+    }
+
+    // BT address is a ulong; bytes[5..0] map to the 6 display octets (little-endian).
+    private static string BtAddressToKey(ulong address)
+    {
+        var b = BitConverter.GetBytes(address);
+        return $"{b[5]:X2}{b[4]:X2}{b[3]:X2}{b[2]:X2}{b[1]:X2}{b[0]:X2}";
+    }
+
     // ── Constructors ──────────────────────────────────────────────────────────
     public DevicesViewModel() : this(new NullIpcSender()) { }
 
@@ -87,6 +194,14 @@ public partial class DevicesViewModel : ObservableObject
     {
         _ipc = ipc;
         RefreshCommand.Execute(null);
+    }
+
+    partial void OnSelectedDeviceChanged(BluetoothDeviceInfo? value)
+    {
+        SelectedCodec  = "SBC";
+        SelectedBitrate = 320;
+        IsNoiseCancellationEnabled = false;
+        IsVoiceEnhancementEnabled  = false;
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
@@ -98,52 +213,43 @@ public partial class DevicesViewModel : ObservableObject
             Devices.Clear();
             SelectedDevice = null;
 
-            const string btKey = @"SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices";
-            using var key = Registry.LocalMachine.OpenSubKey(btKey);
+            _a2dpCache = QueryA2dpDevices();
+            var btDevices = QueryBtDevices();
 
-            if (key is null)
+            if (btDevices.Count == 0)
             {
-                StatusMessage = "No hay adaptador Bluetooth o no hay dispositivos emparejados.";
+                StatusMessage = "No hay dispositivos Bluetooth conectados.";
                 return;
             }
 
-            var all = new System.Collections.Generic.List<BluetoothDeviceInfo>();
+            var all = new List<BluetoothDeviceInfo>();
 
-            foreach (var addrKey in key.GetSubKeyNames())
+            foreach (var (addrKey, (name, cod, isConnected)) in btDevices)
             {
-                try
-                {
-                    using var devKey = key.OpenSubKey(addrKey);
-                    if (devKey is null) continue;
+                var displayName = string.IsNullOrWhiteSpace(name) ? addrKey : name;
+                var addr        = FormatMac(addrKey);
+                var (typeLabel, typeIcon, isAudio) = ClassifyDevice(cod, displayName);
+                var codecs      = EstimateCodecs(displayName, isAudio);
 
-                    var nameRaw  = devKey.GetValue("Name") as byte[];
-                    var name     = nameRaw is not null ? DecodeBtName(nameRaw) : addrKey;
-                    if (string.IsNullOrWhiteSpace(name)) name = addrKey;
+                _a2dpCache.TryGetValue(addrKey, out var a2dp);
+                var drvStatus = BuildDriverStatus(a2dp);
+                var usesOwb   = a2dp?.DriverInf.Contains("owb_a2dp",
+                                    StringComparison.OrdinalIgnoreCase) == true;
 
-                    var addr     = FormatMac(addrKey);
-                    var classVal = devKey.GetValue("ClassOfDevice");
-                    var cod      = classVal is int ci ? ci : classVal is uint u ? (int)u : 0;
-                    var (typeLabel, typeIcon, isAudio) = ClassifyDevice(cod, name);
-                    var codecs   = EstimateCodecs(name, isAudio);
-                    var drvStatus = GetDriverStatus(addrKey);
-
-                    all.Add(new BluetoothDeviceInfo(name, addr, typeLabel, typeIcon, isAudio, codecs, drvStatus));
-                }
-                catch { /* skip malformed entry */ }
+                all.Add(new BluetoothDeviceInfo(
+                    displayName, addr, addrKey,
+                    typeLabel, typeIcon, isAudio, codecs, drvStatus, usesOwb, isConnected));
             }
 
-            // Audio devices first, then others
             foreach (var d in all.OrderByDescending(d => d.IsAudio).ThenBy(d => d.Name))
                 Devices.Add(d);
 
             var audioCount = all.Count(d => d.IsAudio);
-            StatusMessage = all.Count > 0
-                ? $"{all.Count} dispositivo(s) — {audioCount} de audio, {all.Count - audioCount} otros."
-                : "No se encontraron dispositivos emparejados.";
+            StatusMessage = $"{all.Count} dispositivo(s) conectado(s) — {audioCount} de audio.";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = $"Error al escanear: {ex.Message}";
         }
     }
 
@@ -151,10 +257,15 @@ public partial class DevicesViewModel : ObservableObject
     private void ApplyCodec()
     {
         if (SelectedDevice is null) return;
-        _ipc.SendSetCodec("SBC", "switch", 1);
-        StatusMessage = $"Codec aplicado a {SelectedDevice.Name}. Configura parámetros en la pestaña Codec.";
+        if (!_ipc.IsConnected)
+        {
+            StatusMessage = "El servicio OpenWinBlue no está activo. Inicia owb-service.exe para aplicar cambios en tiempo real.";
+            return;
+        }
+        _ipc.SendSetCodec(SelectedCodec, "switch", (long)SelectedBitrate * 1000);
+        StatusMessage = $"{SelectedCodec} a {SelectedBitrate} kbps aplicado a {SelectedDevice.Name}.";
     }
-    private bool CanApply() => SelectedDevice?.IsAudio == true && _ipc.IsConnected;
+    private bool CanApply() => SelectedDevice?.IsAudio == true && OwbDriverInstalled;
 
     [RelayCommand(CanExecute = nameof(CanInstall))]
     private void InstallDriver()
@@ -163,23 +274,22 @@ public partial class DevicesViewModel : ObservableObject
 
         if (!TestSigningEnabled)
         {
-            var result = System.Windows.MessageBox.Show(
+            var result = WpfMsg.Show(
                 "El driver de OpenWinBlue no está firmado para producción.\n\n" +
                 "Para instalarlo en desarrollo necesitas activar Test Signing Mode:\n\n" +
                 "  bcdedit /set testsigning on\n\n" +
                 "¿Deseas activarlo ahora? (Requiere reiniciar Windows después)",
                 "Test Signing requerido",
-                System.Windows.MessageBoxButton.YesNo,
-                System.Windows.MessageBoxImage.Warning);
+                WpfMsgButton.YesNo,
+                WpfMsgImage.Warning);
 
-            if (result == System.Windows.MessageBoxResult.Yes)
+            if (result == WpfMsgResult.Yes)
                 EnableTestSigningCommand.Execute(null);
             return;
         }
 
         try
         {
-            // Find INF: try repo path relative to exe, then current dir
             var infPath = FindInfPath();
             if (infPath is null)
             {
@@ -187,29 +297,39 @@ public partial class DevicesViewModel : ObservableObject
                 return;
             }
 
-            // Run pnputil via temp bat to capture output
-            var logFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "owb_install.log");
-            var bat = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "owb_install.bat");
-            System.IO.File.WriteAllText(bat,
+            var logFile = Path.Combine(Path.GetTempPath(), "owb_install.log");
+            var batFile = Path.Combine(Path.GetTempPath(), "owb_install.bat");
+            File.WriteAllText(batFile,
                 $"@echo off\r\npnputil.exe /add-driver \"{infPath}\" /install > \"{logFile}\" 2>&1\r\n");
 
-            var proc = Process.Start(new ProcessStartInfo {
+            var proc = Process.Start(new ProcessStartInfo
+            {
                 FileName        = "cmd.exe",
-                Arguments       = $"/c \"{bat}\"",
+                Arguments       = $"/c \"{batFile}\"",
                 Verb            = "runas",
                 UseShellExecute = true,
             });
-            StatusMessage = $"Instalando driver para {SelectedDevice.Name}… (espera UAC)";
 
-            // Poll for completion in background
-            System.Threading.Tasks.Task.Run(() => {
+            StatusMessage = $"Instalando driver… (espera UAC)";
+
+            Task.Run(() =>
+            {
                 proc?.WaitForExit(30_000);
-                var log = System.IO.File.Exists(logFile)
-                    ? System.IO.File.ReadAllText(logFile).Trim()
-                    : "(sin output)";
-                System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                    StatusMessage = log.Length > 0 ? log : "Instalación completada.";
-                    OnPropertyChanged(nameof(OwbDriverInstalled));
+                var exitCode = proc?.ExitCode ?? -1;
+
+                ForceActivateA2dp(infPath);
+
+                var log = File.Exists(logFile) ? File.ReadAllText(logFile).Trim() : string.Empty;
+                var registered = exitCode == 0
+                    || log.Contains("correctamente", StringComparison.OrdinalIgnoreCase)
+                    || log.Contains("ya existe",     StringComparison.OrdinalIgnoreCase)
+                    || log.Contains("successfully",  StringComparison.OrdinalIgnoreCase);
+
+                WpfApp.Current.Dispatcher.Invoke(() =>
+                {
+                    StatusMessage = registered
+                        ? "Driver registrado. Reconecta los auriculares para que Windows lo aplique."
+                        : $"Error al registrar driver (código {exitCode}).";
                     RefreshCommand.Execute(null);
                 });
             });
@@ -223,35 +343,22 @@ public partial class DevicesViewModel : ObservableObject
     {
         try
         {
-            Process.Start(new ProcessStartInfo {
+            Process.Start(new ProcessStartInfo
+            {
                 FileName        = "cmd.exe",
                 Arguments       = "/c bcdedit /set testsigning on",
                 Verb            = "runas",
                 UseShellExecute = true,
             });
-            System.Windows.MessageBox.Show(
+            WpfMsg.Show(
                 "Test Signing activado.\n\nReinicia Windows para que surta efecto.\n" +
                 "Después podrás instalar el driver OpenWinBlue.",
                 "Test Signing activado",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
+                WpfMsgButton.OK,
+                WpfMsgImage.Information);
             OnPropertyChanged(nameof(TestSigningEnabled));
         }
         catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
-    }
-
-    private static string? FindInfPath()
-    {
-        var candidates = new[] {
-            // From repo root (dev build)
-            System.IO.Path.GetFullPath(System.IO.Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "driver", "owb_a2dp.inf")),
-            // Same dir as exe (installed build)
-            System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "owb_a2dp.inf"),
-            // Hardcoded repo path
-            @"c:\suru\open winblue\driver\owb_a2dp.inf",
-        };
-        return candidates.FirstOrDefault(System.IO.File.Exists);
     }
 
     [RelayCommand(CanExecute = nameof(CanReset))]
@@ -260,7 +367,7 @@ public partial class DevicesViewModel : ObservableObject
         if (SelectedDevice is null) return;
         try
         {
-            Process.Start(new ProcessStartInfo
+            var proc = Process.Start(new ProcessStartInfo
             {
                 FileName        = "pnputil.exe",
                 Arguments       = "/delete-driver owb_a2dp.inf /uninstall /force",
@@ -268,22 +375,134 @@ public partial class DevicesViewModel : ObservableObject
                 UseShellExecute = true,
             });
             StatusMessage = $"Restaurando driver de Windows para {SelectedDevice.Name}…";
-            OnPropertyChanged(nameof(OwbDriverInstalled));
+            Task.Run(() =>
+            {
+                proc?.WaitForExit(15_000);
+                WpfApp.Current.Dispatcher.Invoke(() => RefreshCommand.Execute(null));
+            });
         }
         catch (Exception ex) { StatusMessage = $"Error al restaurar: {ex.Message}"; }
     }
     private bool CanReset() => SelectedDevice?.IsAudio == true;
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    private static string DecodeBtName(byte[] raw)
+    // ── Force-activate via Win32 UpdateDriverForPlugAndPlayDevicesW ───────────
+    // Runs elevated to override WHQL driver ranking for all A2DP Sink devices.
+    private static void ForceActivateA2dp(string infPath)
     {
-        var nullIdx = Array.IndexOf(raw, (byte)0);
-        var len = nullIdx >= 0 ? nullIdx : raw.Length;
-        if (len == 0) return string.Empty;
-        var utf8 = Encoding.UTF8.GetString(raw, 0, len).Trim();
-        return !utf8.Contains('�') && utf8.Length > 0
-            ? utf8
-            : Encoding.Unicode.GetString(raw).TrimEnd('\0', ' ').Trim();
+        const string script = """
+            param([string]$InfPath)
+            Add-Type -TypeDefinition @'
+            using System; using System.Runtime.InteropServices;
+            public class PnpForcer {
+                [DllImport("newdev.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+                public static extern bool UpdateDriverForPlugAndPlayDevicesW(
+                    IntPtr h, string hwId, string inf, uint flags, out bool reboot);
+            }
+            '@
+            $r = $false
+            $ok = [PnpForcer]::UpdateDriverForPlugAndPlayDevicesW(
+                [IntPtr]::Zero,
+                'BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}',
+                $InfPath, 1, [ref]$r)
+            Write-Host "ForceActivate: ok=$ok reboot=$r"
+            if ($r) { Write-Host "Reinicio requerido para activar el driver." }
+            """;
+
+        var psPath = Path.Combine(Path.GetTempPath(), "owb_force_a2dp.ps1");
+        File.WriteAllText(psPath, script);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName        = "powershell.exe",
+            Arguments       = $"-NoProfile -ExecutionPolicy Bypass -File \"{psPath}\" -InfPath \"{infPath}\"",
+            Verb            = "runas",
+            UseShellExecute = true,
+        })?.WaitForExit(20_000);
+    }
+
+    // ── A2DP device enumeration via pnputil ───────────────────────────────────
+    private static Dictionary<string, A2dpInfo> QueryA2dpDevices()
+    {
+        const string a2dpUuid = "0000110b-0000-1000-8000-00805f9b34fb";
+        var result = new Dictionary<string, A2dpInfo>(StringComparer.OrdinalIgnoreCase);
+
+        string output;
+        try
+        {
+            using var proc = Process.Start(new ProcessStartInfo
+            {
+                FileName               = "pnputil.exe",
+                Arguments              = "/enum-devices /ids",
+                RedirectStandardOutput = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true,
+            });
+            output = proc?.StandardOutput.ReadToEnd() ?? string.Empty;
+            proc?.WaitForExit(5_000);
+        }
+        catch { return result; }
+
+        // Split into per-device blocks separated by blank lines.
+        var blocks = output.Split(
+            ["\r\n\r\n", "\n\n"],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var block in blocks)
+        {
+            if (!block.Contains(a2dpUuid, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string? instanceId = null;
+            string? driverInf  = null;
+
+            foreach (var raw in block.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var colon = raw.IndexOf(':');
+                if (colon < 0) continue;
+                var value = raw[(colon + 1)..].Trim();
+
+                if (value.Contains(a2dpUuid, StringComparison.OrdinalIgnoreCase))
+                    instanceId = value;
+                else if (value.EndsWith(".inf", StringComparison.OrdinalIgnoreCase))
+                    driverInf = value;
+            }
+
+            if (instanceId is null) continue;
+
+            // Extract 12-char MAC segment from instance ID: ...LOCALADDR REMOTEADDR _C0xxxxxx
+            var m = Regex.Match(instanceId, @"([0-9A-Fa-f]{12})_C0", RegexOptions.None);
+            if (!m.Success) continue;
+
+            var mac = m.Groups[1].Value.ToUpperInvariant();
+            result[mac] = new A2dpInfo(instanceId, driverInf ?? string.Empty);
+        }
+
+        return result;
+    }
+
+    private static string BuildDriverStatus(A2dpInfo? a2dp)
+    {
+        if (a2dp is null)
+            return "Sin perfil A2DP activo";
+        if (a2dp.DriverInf.Contains("owb_a2dp", StringComparison.OrdinalIgnoreCase))
+            return "OpenWinBlue instalado ✓";
+        return string.IsNullOrEmpty(a2dp.DriverInf)
+            ? "Driver desconocido"
+            : $"Driver: {a2dp.DriverInf}";
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    private static string? FindInfPath()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "owb_a2dp.inf"),
+            Path.GetFullPath(Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "..", "..", "..", "..", "driver", "owb_a2dp.inf")),
+            @"c:\suru\open winblue\driver\owb_a2dp.inf",
+        };
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static string FormatMac(string addrKey) =>
@@ -293,10 +512,8 @@ public partial class DevicesViewModel : ObservableObject
 
     private static (string label, string icon, bool isAudio) ClassifyDevice(int cod, string name)
     {
-        // Windows BTHPORT often doesn't store ClassOfDevice — use name heuristics first.
         var n = name.ToLowerInvariant();
 
-        // Clearly NOT audio
         if (n.Contains("controller") || n.Contains("keyboard") || n.Contains("mouse") ||
             n.Contains("teclado") || n.Contains("raton"))
             return ("Periférico", "🖱️", false);
@@ -306,7 +523,6 @@ public partial class DevicesViewModel : ObservableObject
             n.Contains("ultra de "))
             return ("Teléfono / Móvil", "📱", false);
 
-        // Clearly audio by name
         if (n.Contains("headset") || n.Contains("headphone") || n.Contains("auricular") ||
             n.Contains("earbud") || n.Contains("earphone") || n.Contains("buds") ||
             n.Contains("cloud ") || n.Contains("recon ") || n.Contains("arctis") ||
@@ -320,65 +536,53 @@ public partial class DevicesViewModel : ObservableObject
             n.Contains(" pro") || n.Contains("speaker") || n.Contains("altavoz"))
             return ("Auriculares / Audio", "🎧", true);
 
-        // Fallback: COD if available
         int major = (cod >> 8) & 0x1F;
-        return major switch {
-            4 => ("Dispositivo de audio",  "🎵", true),
-            2 => ("Teléfono",              "📱", false),
-            1 => ("Computadora",           "💻", false),
-            5 => ("Periférico",            "🖱️", false),
-            _ => ("Desconocido",           "🔷", false),
+        return major switch
+        {
+            4 => ("Dispositivo de audio", "🎵", true),
+            2 => ("Teléfono",             "📱", false),
+            1 => ("Computadora",          "💻", false),
+            5 => ("Periférico",           "🖱️", false),
+            _ => ("Desconocido",          "🔷", false),
         };
     }
 
     private static string[] EstimateCodecs(string name, bool isAudio)
     {
-        if (!isAudio) return Array.Empty<string>();
+        if (!isAudio) return [];
 
         var n   = name.ToLowerInvariant();
-        var res = new System.Collections.Generic.List<string> { "SBC" }; // mandatory
+        var res = new List<string> { "SBC" };
 
-        // LDAC — Sony
         if (n.Contains("sony") || n.Contains("wh-") || n.Contains("wf-") ||
             n.Contains("linkbuds") || n.Contains("xm"))
             res.Add("LDAC");
 
-        // AAC — Apple, modern headsets
         if (n.Contains("airpods") || n.Contains("beats") || n.Contains("jbl") ||
             n.Contains("jabra") || n.Contains("plantronics") || n.Contains("poly") ||
             n.Contains("bose") || n.Contains("samsung") || n.Contains("buds") ||
             n.Contains("galaxy"))
             res.Add("AAC");
 
-        // aptX — Qualcomm-powered
         if (n.Contains("jabra") || n.Contains("sennheiser") || n.Contains("audio-technica") ||
             n.Contains("anker") || n.Contains("soundcore") || n.Contains("oneplus") ||
             n.Contains("lg ") || n.Contains("pixel") || n.Contains("az09") ||
             n.Contains("recon"))
             res.Add("aptX");
 
-        // aptX-HD — premium tier
         if (n.Contains("jabra") || n.Contains("sennheiser") || n.Contains("b&w") ||
             n.Contains("bowers") || n.Contains("recon"))
             res.Add("aptX-HD");
 
-        // LC3 — LE Audio generation
         if (n.Contains("galaxy buds3") || n.Contains("airpods pro 2") ||
             n.Contains("le audio") || n.Contains("lc3"))
             res.Add("LC3");
 
-        return res.ToArray();
+        return [.. res];
     }
 
-    private static string GetDriverStatus(string addrKey)
-    {
-        // Check if owb_a2dp service is globally registered
-        using var svcKey = Registry.LocalMachine.OpenSubKey(
-            @"SYSTEM\CurrentControlSet\Services\owb_a2dp");
-        return svcKey is not null
-            ? "OpenWinBlue instalado"
-            : "Driver Windows (btavchdt.sys)";
-    }
+    // Pnputil-derived A2DP profile device info (internal only).
+    private sealed record A2dpInfo(string InstanceId, string DriverInf);
 
     private sealed class NullIpcSender : IIpcSender
     {

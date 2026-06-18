@@ -1,24 +1,31 @@
 using System.Diagnostics;
+using System.IO;
 using System.ServiceProcess;
 
 namespace OpenWinBlue.Services;
 
 public sealed class DriverInstallerService : IDriverInstaller
 {
+    // True when owb_a2dp.inf is registered in the Windows driver store.
     public bool IsInstalled
     {
         get
         {
             try
             {
-                using var sc = new ServiceController("owb_a2dp");
-                _ = sc.Status;
-                return true;
+                using var proc = Process.Start(new ProcessStartInfo
+                {
+                    FileName               = "pnputil.exe",
+                    Arguments              = "/enum-drivers",
+                    RedirectStandardOutput = true,
+                    UseShellExecute        = false,
+                    CreateNoWindow         = true,
+                });
+                var output = proc?.StandardOutput.ReadToEnd() ?? string.Empty;
+                proc?.WaitForExit(5_000);
+                return output.Contains("owb_a2dp.inf", StringComparison.OrdinalIgnoreCase);
             }
-            catch (InvalidOperationException)
-            {
-                return false;
-            }
+            catch { return false; }
         }
     }
 
@@ -38,7 +45,7 @@ public sealed class DriverInstallerService : IDriverInstaller
         Process.Start(new ProcessStartInfo
         {
             FileName        = "pnputil.exe",
-            Arguments       = "/delete-driver owb_a2dp.inf /uninstall",
+            Arguments       = "/delete-driver owb_a2dp.inf /uninstall /force",
             Verb            = "runas",
             UseShellExecute = true,
         });
@@ -55,7 +62,7 @@ public sealed class DriverInstallerService : IDriverInstaller
                 sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(5));
             }
         }
-        catch (InvalidOperationException) { /* service not present */ }
+        catch (InvalidOperationException) { }
 
         Process.Start(new ProcessStartInfo
         {
@@ -81,6 +88,6 @@ public sealed class DriverInstallerService : IDriverInstaller
             using var sc = new ServiceController("BthHFSrv");
             sc.Start();
         }
-        catch (InvalidOperationException) { /* service not present */ }
+        catch (InvalidOperationException) { }
     }
 }

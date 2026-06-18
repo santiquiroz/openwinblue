@@ -14,8 +14,11 @@ PnpLockdown = 1
 %ManufacturerName% = Standard,NTamd64
 
 ; Match all Bluetooth A2DP Sink devices (UUID 0000110b).
-; Windows creates these nodes for any headset/speaker supporting A2DP.
+; The generic UUID entry covers every A2DP headphone/speaker as a compatible-ID match.
+; Force-install on specific devices is handled by the GUI using
+; UpdateDriverForPlugAndPlayDevicesW(INSTALLFLAG_FORCE), bypassing WHQL ranking.
 [Standard.NTamd64]
+%OWB_A2DP_DESC% = OWB_A2DP_Install, BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}
 %OWB_A2DP_DESC% = OWB_A2DP_Install, BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&0000
 %OWB_A2DP_DESC% = OWB_A2DP_Install, BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&0001
 %OWB_A2DP_DESC% = OWB_A2DP_Install, BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&0002

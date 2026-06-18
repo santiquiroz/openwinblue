@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="OpenWinBlue"
            Manufacturer="OpenWinBlue Project"
            Version="0.3.0"
@@ -9,61 +11,122 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of OpenWinBlue is already installed." />
     <MediaTemplate EmbedCab="true" />
 
-    <Directory Id="TARGETDIR" Name="SourceDir">
-      <!-- Program Files\OpenWinBlue -->
-      <Directory Id="ProgramFiles64Folder">
-        <Directory Id="INSTALLDIR" Name="OpenWinBlue">
+    <!-- UI mínima: muestra progreso y errores visibles -->
+    <ui:WixUI Id="WixUI_Minimal"/>
 
-          <Component Id="ServiceExe" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-            <File Id="owb_service" Name="owb-service.exe"
-                  Source="$(var.ServiceBuildDir)\owb_service.exe"
-                  KeyPath="yes"/>
-          </Component>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="OpenWinBlue">
 
-          <Component Id="GuiExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901">
-            <File Id="OpenWinBlue" Name="OpenWinBlue.exe"
-                  Source="$(var.GuiBuildDir)\OpenWinBlue.exe"
-                  KeyPath="yes"/>
-          </Component>
+        <Component Id="ServiceExe" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890" Bitness="always64">
+          <File Id="owb_service" Name="owb-service.exe"
+                Source="$(var.ServiceBuildDir)\owb_service.exe"
+                KeyPath="yes"/>
+        </Component>
 
-          <Component Id="RollbackScript" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012">
-            <File Id="owb_rollback" Name="owb-rollback.bat"
-                  Source="$(sys.SOURCEFILEDIR)..\tools\owb-rollback.bat"
-                  KeyPath="yes"/>
-          </Component>
+        <Component Id="GuiExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901" Bitness="always64">
+          <File Id="OpenWinBlue" Name="OpenWinBlue.exe"
+                Source="$(var.GuiBuildDir)\OpenWinBlue.exe"
+                KeyPath="yes"/>
+        </Component>
 
-        </Directory>
+        <Component Id="RollbackScript" Guid="C3D4E5F6-A7B8-9012-CDEF-123456789012" Bitness="always64">
+          <File Id="owb_rollback" Name="owb-rollback.bat"
+                Source="$(sys.SOURCEFILEDIR)..\tools\owb-rollback.bat"
+                KeyPath="yes"/>
+        </Component>
+
+        <Component Id="InstallDriverScript" Guid="B8C9D0E1-F2A3-4567-1234-678901234567" Bitness="always64">
+          <File Id="owb_install_driver" Name="owb-install-driver.bat"
+                Source="$(sys.SOURCEFILEDIR)..\tools\owb-install-driver.bat"
+                KeyPath="yes"/>
+        </Component>
+
+        <Component Id="DriverInf" Guid="E5F6A7B8-C9D0-1234-EF01-345678901234" Bitness="always64">
+          <File Id="owb_a2dp_inf" Name="owb_a2dp.inf"
+                Source="$(var.DriverBuildDir)\owb_a2dp.inf"
+                KeyPath="yes"/>
+        </Component>
+
+        <Component Id="DriverCat" Guid="F6A7B8C9-D0E1-2345-F012-456789012345" Bitness="always64">
+          <File Id="owb_a2dp_cat" Name="owb_a2dp.cat"
+                Source="$(var.DriverBuildDir)\owb_a2dp.cat"
+                KeyPath="yes"/>
+        </Component>
+
+        <Component Id="TestCert" Guid="A7B8C9D0-E1F2-3456-0123-567890123456" Bitness="always64">
+          <File Id="owb_test_cer" Name="owb_test.cer"
+                Source="$(var.DriverBuildDir)\owb_test.cer"
+                KeyPath="yes"/>
+        </Component>
+
+        <!-- .sys va junto con .inf y .cat para que pnputil los encuentre todos en el mismo dir -->
+        <Component Id="DriverSys" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123" Bitness="always64">
+          <File Id="owb_a2dp_sys" Name="owb_a2dp.sys"
+                Source="$(var.DriverBuildDir)\owb_a2dp.sys"
+                KeyPath="yes"/>
+        </Component>
+
       </Directory>
+    </StandardDirectory>
 
-      <!-- System32\drivers -->
-      <Directory Id="System64Folder">
-        <Directory Id="DriversFolder" Name="drivers">
-          <Component Id="DriverSys" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123">
-            <File Id="owb_a2dp_sys" Name="owb_a2dp.sys"
-                  Source="$(var.DriverBuildDir)\owb_a2dp.sys"
-                  KeyPath="yes"/>
-          </Component>
-        </Directory>
-      </Directory>
-    </Directory>
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="E9F0A1B2-C3D4-5678-EF01-234567890ABC" Bitness="always64">
+        <Shortcut Id="DesktopShortcutOWB"
+                  Name="OpenWinBlue"
+                  Description="OpenWinBlue Bluetooth Audio Driver"
+                  Target="[INSTALLDIR]OpenWinBlue.exe"
+                  WorkingDirectory="INSTALLDIR"/>
+        <RegistryValue Root="HKCU"
+                       Key="Software\OpenWinBlue"
+                       Name="DesktopShortcutInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes"/>
+      </Component>
+    </StandardDirectory>
 
     <Feature Id="ProductFeature" Title="OpenWinBlue" Level="1">
       <ComponentRef Id="ServiceExe"/>
       <ComponentRef Id="GuiExe"/>
       <ComponentRef Id="RollbackScript"/>
+      <ComponentRef Id="InstallDriverScript"/>
+      <ComponentRef Id="DriverInf"/>
+      <ComponentRef Id="DriverCat"/>
+      <ComponentRef Id="TestCert"/>
       <ComponentRef Id="DriverSys"/>
+      <ComponentRef Id="DesktopShortcut"/>
     </Feature>
 
-    <!-- Register driver with pnputil on install -->
+    <!-- Texto de progreso visible en la barra del instalador -->
+    <UI>
+      <ProgressText Action="InstallDriver" Message="Instalando certificado y registrando driver A2DP..."/>
+    </UI>
+
+    <SetProperty Id="InstallCertRoot"
+                 Value="&quot;certutil.exe&quot; -addstore root &quot;[INSTALLDIR]owb_test.cer&quot;"
+                 Before="InstallCertRoot" Sequence="execute"/>
+    <CustomAction Id="InstallCertRoot"
+                  BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
+
+    <SetProperty Id="InstallCertTP"
+                 Value="&quot;certutil.exe&quot; -addstore TrustedPublisher &quot;[INSTALLDIR]owb_test.cer&quot;"
+                 Before="InstallCertTP" Sequence="execute"/>
+    <CustomAction Id="InstallCertTP"
+                  BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
+
+    <SetProperty Id="InstallDriver"
+                 Value="&quot;pnputil.exe&quot; /add-driver &quot;[INSTALLDIR]owb_a2dp.inf&quot; /install"
+                 Before="InstallDriver" Sequence="execute"/>
     <CustomAction Id="InstallDriver"
-                  Execute="deferred"
-                  Impersonate="no"
-                  ExeCommand="pnputil.exe /add-driver &quot;[INSTALLDIR]owb_a2dp.inf&quot; /install"
-                  FileRef="owb_a2dp_sys"
-                  Return="ignore"/>
+                  BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
 
     <InstallExecuteSequence>
-      <Custom Action="InstallDriver" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="InstallCertRoot" After="InstallFiles"    Condition="NOT Installed"/>
+      <Custom Action="InstallCertTP"   After="InstallCertRoot" Condition="NOT Installed"/>
+      <Custom Action="InstallDriver"   After="InstallCertTP"   Condition="NOT Installed"/>
     </InstallExecuteSequence>
 
   </Package>

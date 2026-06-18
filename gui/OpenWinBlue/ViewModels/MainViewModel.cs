@@ -14,8 +14,8 @@ public partial class MainViewModel : ObservableObject
     public ControlsViewModel Controls { get; }
     public DevicesViewModel  Devices  { get; }
 
-    [ObservableProperty] private int    _selectedTab = 0;
-    [ObservableProperty] private string _titleSuffix = "— not connected";
+    [ObservableProperty] private string _titleSuffix  = "— not connected";
+    [ObservableProperty] private string _statusBarText = "Servicio: sin conexión";
 
     private readonly IpcClientService _ipc;
 
@@ -43,14 +43,16 @@ public partial class MainViewModel : ObservableObject
             {
                 Status.SetConnected(true);
                 Status.Update(payload);
-                TitleSuffix = $"— {payload.CodecName}, {payload.Bitrate / 1000} kbps";
+                TitleSuffix   = $"— {payload.CodecName}, {payload.Bitrate / 1000} kbps";
+                StatusBarText = $"Conectado — {payload.CodecName} · {payload.Bitrate / 1000} kbps";
             });
         }
         else
         {
             Status.SetConnected(true);
             Status.Update(payload);
-            TitleSuffix = $"— {payload.CodecName}, {payload.Bitrate / 1000} kbps";
+            TitleSuffix   = $"— {payload.CodecName}, {payload.Bitrate / 1000} kbps";
+            StatusBarText = $"Conectado — {payload.CodecName} · {payload.Bitrate / 1000} kbps";
         }
     }
 }

@@ -1,30 +1,27 @@
 <Window x:Class="OpenWinBlue.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:OpenWinBlue.ViewModels"
         xmlns:v="clr-namespace:OpenWinBlue.Views"
         Title="{Binding TitleSuffix, StringFormat='OpenWinBlue {0}'}"
-        Height="540" Width="820"
+        Height="560" Width="860"
         Background="{StaticResource BgBrush}"
         WindowStartupLocation="CenterScreen"
         Closing="Window_Closing">
     <Grid>
-        <TabControl SelectedIndex="{Binding SelectedTab}" Margin="0">
-            <TabItem Header="Status">
-                <v:StatusView DataContext="{Binding Status}"/>
-            </TabItem>
-            <TabItem Header="Codec">
-                <v:CodecView DataContext="{Binding Codec}"/>
-            </TabItem>
-            <TabItem Header="Driver">
-                <v:DriverView DataContext="{Binding Driver}"/>
-            </TabItem>
-            <TabItem Header="Controls">
-                <v:ControlsView DataContext="{Binding Controls}"/>
-            </TabItem>
-            <TabItem Header="Devices">
-                <v:DevicesView DataContext="{Binding Devices}"/>
-            </TabItem>
-        </TabControl>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <v:DevicesView Grid.Row="0" DataContext="{Binding Devices}"/>
+
+        <Border Grid.Row="1"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,5">
+            <TextBlock Text="{Binding StatusBarText}" FontSize="10"
+                       Foreground="{StaticResource TextSecondaryBrush}"/>
+        </Border>
     </Grid>
 </Window>
