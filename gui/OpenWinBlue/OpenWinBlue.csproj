@@ -7,6 +7,9 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Program.cs como entry point explícito para capturar crashes pre-WPF -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <StartupObject>OpenWinBlue.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>

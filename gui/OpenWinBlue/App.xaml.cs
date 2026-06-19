@@ -17,6 +17,20 @@ public partial class App : Application
         base.OnStartup(e);
         OWBLogger.Info($"App starting — OS: {Environment.OSVersion}, .NET: {Environment.Version}");
 
+        try
+        {
+            var dict = new System.Windows.ResourceDictionary
+            {
+                Source = new Uri("pack://application:,,,/Themes/Dark.xaml", UriKind.Absolute)
+            };
+            Resources.MergedDictionaries.Add(dict);
+            OWBLogger.Info("Theme loaded OK");
+        }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "Theme load failed — continuing without theme");
+        }
+
         // Captura excepciones en el dispatcher (después de que inicia el loop)
         DispatcherUnhandledException += (_, ex) => {
             OWBLogger.Error(ex.Exception, "DispatcherUnhandledException");
