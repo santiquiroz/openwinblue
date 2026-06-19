@@ -13,7 +13,7 @@
   <!-- Release: rutas de build firmado oficialmente -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DefineConstants>
-      ProductVersion=0.3.0;
+      ProductVersion=0.3.1;
       ServiceBuildDir=$(MSBuildThisFileDirectory)..\build\release\service;
       GuiBuildDir=$(MSBuildThisFileDirectory)..\gui\OpenWinBlue\bin\Publish\win-x64;
       DriverBuildDir=$(MSBuildThisFileDirectory)..\driver\x64\Release
@@ -23,7 +23,7 @@
   <!-- Debug: rutas de build local, driver con certificado de prueba -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == ''">
     <DefineConstants>
-      ProductVersion=0.3.0;
+      ProductVersion=0.3.1;
       ServiceBuildDir=$(MSBuildThisFileDirectory)..\build\nmake-debug\service;
       GuiBuildDir=$(MSBuildThisFileDirectory)..\gui\OpenWinBlue\bin\Publish\win-x64;
       DriverBuildDir=$(MSBuildThisFileDirectory)..\build\driver

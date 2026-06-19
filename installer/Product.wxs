@@ -4,11 +4,14 @@
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="OpenWinBlue"
            Manufacturer="OpenWinBlue Project"
-           Version="0.3.0"
+           Version="$(var.ProductVersion)"
            UpgradeCode="7c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f"
            Compressed="true">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of OpenWinBlue is already installed." />
+    <!-- Schedule=afterInstallInitialize: desinstala versión anterior ANTES de copiar archivos nuevos -->
+    <MajorUpgrade
+      DowngradeErrorMessage="Ya tienes una versión más nueva de OpenWinBlue instalada."
+      Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="true" />
 
     <!-- UI mínima: muestra progreso y errores visibles -->
