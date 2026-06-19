@@ -17,20 +17,40 @@ public partial class App : Application
         base.OnStartup(e);
         OWBLogger.Info($"App starting — OS: {Environment.OSVersion}, .NET: {Environment.Version}");
 
+        // Captura excepciones en el dispatcher (después de que inicia el loop)
         DispatcherUnhandledException += (_, ex) => {
             OWBLogger.Error(ex.Exception, "DispatcherUnhandledException");
             System.Windows.MessageBox.Show(
-                ex.Exception.ToString(),
-                "Unhandled Exception",
+                $"Error inesperado:\n\n{ex.Exception.Message}\n\nVer log completo en:\n{OWBLogger.LogFilePath}",
+                "OpenWinBlue — Error",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
             ex.Handled = true;
         };
 
-        SetupTrayIcon();
-        ShowMainWindow();
-        _ipc.Start();
-        OWBLogger.Info("App startup complete");
+        // Captura excepciones en hilos de background
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) => {
+            OWBLogger.Error(ex.ExceptionObject as Exception ?? new Exception(ex.ExceptionObject?.ToString()),
+                "UnhandledException");
+        };
+
+        try
+        {
+            SetupTrayIcon();
+            ShowMainWindow();
+            _ipc.Start();
+            OWBLogger.Info("App startup complete");
+        }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "Fatal error during startup");
+            System.Windows.MessageBox.Show(
+                $"OpenWinBlue no pudo iniciar:\n\n{ex.Message}\n\nLog en:\n{OWBLogger.LogFilePath}",
+                "OpenWinBlue — Error fatal",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+            Shutdown(1);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
