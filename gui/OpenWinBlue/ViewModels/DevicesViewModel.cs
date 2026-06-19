@@ -343,19 +343,31 @@ public partial class DevicesViewModel : ObservableObject
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            var proc = Process.Start(new ProcessStartInfo
             {
                 FileName        = "cmd.exe",
                 Arguments       = "/c bcdedit /set testsigning on",
                 Verb            = "runas",
                 UseShellExecute = true,
             });
-            WpfMsg.Show(
-                "Test Signing activado.\n\nReinicia Windows para que surta efecto.\n" +
-                "Después podrás instalar el driver OpenWinBlue.",
-                "Test Signing activado",
-                WpfMsgButton.OK,
-                WpfMsgImage.Information);
+
+            proc?.WaitForExit(15_000);
+
+            if (proc?.ExitCode == 0)
+            {
+                WpfMsg.Show(
+                    "Test Signing activado.\n\nReinicia Windows para que surta efecto.\n" +
+                    "Después podrás instalar el driver OpenWinBlue.",
+                    "Test Signing activado",
+                    WpfMsgButton.OK,
+                    WpfMsgImage.Information);
+            }
+            else
+            {
+                StatusMessage = $"Error al activar Test Signing (código {proc?.ExitCode}). " +
+                                "Asegúrate de aprobar el UAC y de ejecutar como Administrador.";
+            }
+
             OnPropertyChanged(nameof(TestSigningEnabled));
         }
         catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
