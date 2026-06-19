@@ -6,7 +6,6 @@ namespace OpenWinBlue.Services;
 
 public sealed class DriverInstallerService : IDriverInstaller
 {
-    // True when owb_a2dp.inf is registered in the Windows driver store.
     public bool IsInstalled
     {
         get
@@ -23,14 +22,21 @@ public sealed class DriverInstallerService : IDriverInstaller
                 });
                 var output = proc?.StandardOutput.ReadToEnd() ?? string.Empty;
                 proc?.WaitForExit(5_000);
-                return output.Contains("owb_a2dp.inf", StringComparison.OrdinalIgnoreCase);
+                var installed = output.Contains("owb_a2dp.inf", StringComparison.OrdinalIgnoreCase);
+                OWBLogger.Info($"IsInstalled check → {installed}");
+                return installed;
             }
-            catch { return false; }
+            catch (Exception ex)
+            {
+                OWBLogger.Error(ex, "IsInstalled check failed");
+                return false;
+            }
         }
     }
 
     public void Install(string infPath)
     {
+        OWBLogger.Info($"Installing driver from: {infPath}");
         Process.Start(new ProcessStartInfo
         {
             FileName        = "pnputil.exe",
@@ -42,6 +48,7 @@ public sealed class DriverInstallerService : IDriverInstaller
 
     public void Rollback()
     {
+        OWBLogger.Info("Rolling back owb_a2dp driver");
         Process.Start(new ProcessStartInfo
         {
             FileName        = "pnputil.exe",
@@ -53,6 +60,7 @@ public sealed class DriverInstallerService : IDriverInstaller
 
     public void DisableHfpProfile()
     {
+        OWBLogger.Info("Disabling HFP profile (BthHFSrv)");
         try
         {
             using var sc = new ServiceController("BthHFSrv");
@@ -60,9 +68,10 @@ public sealed class DriverInstallerService : IDriverInstaller
             {
                 sc.Stop();
                 sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(5));
+                OWBLogger.Info("BthHFSrv stopped");
             }
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ex) { OWBLogger.Warn($"BthHFSrv stop: {ex.Message}"); }
 
         Process.Start(new ProcessStartInfo
         {
@@ -75,6 +84,7 @@ public sealed class DriverInstallerService : IDriverInstaller
 
     public void EnableHfpProfile()
     {
+        OWBLogger.Info("Enabling HFP profile (BthHFSrv)");
         Process.Start(new ProcessStartInfo
         {
             FileName        = "sc.exe",
@@ -87,7 +97,8 @@ public sealed class DriverInstallerService : IDriverInstaller
         {
             using var sc = new ServiceController("BthHFSrv");
             sc.Start();
+            OWBLogger.Info("BthHFSrv started");
         }
-        catch (InvalidOperationException) { }
+        catch (InvalidOperationException ex) { OWBLogger.Warn($"BthHFSrv start: {ex.Message}"); }
     }
 }

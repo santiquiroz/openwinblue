@@ -208,17 +208,22 @@ public partial class DevicesViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
+        OWBLogger.Info("Scanning Bluetooth devices");
         try
         {
             Devices.Clear();
             SelectedDevice = null;
 
             _a2dpCache = QueryA2dpDevices();
+            OWBLogger.Info($"A2DP cache: {_a2dpCache.Count} device(s) — {string.Join(", ", _a2dpCache.Keys)}");
+
             var btDevices = QueryBtDevices();
+            OWBLogger.Info($"BT devices found: {btDevices.Count}");
 
             if (btDevices.Count == 0)
             {
                 StatusMessage = "No hay dispositivos Bluetooth conectados.";
+                OWBLogger.Warn("No connected Bluetooth devices found");
                 return;
             }
 
@@ -236,6 +241,8 @@ public partial class DevicesViewModel : ObservableObject
                 var usesOwb   = a2dp?.DriverInf.Contains("owb_a2dp",
                                     StringComparison.OrdinalIgnoreCase) == true;
 
+                OWBLogger.Info($"  Device: name='{displayName}' addr={addr} type={typeLabel} audio={isAudio} driver='{drvStatus}' owb={usesOwb}");
+
                 all.Add(new BluetoothDeviceInfo(
                     displayName, addr, addrKey,
                     typeLabel, typeIcon, isAudio, codecs, drvStatus, usesOwb, isConnected));
@@ -246,10 +253,12 @@ public partial class DevicesViewModel : ObservableObject
 
             var audioCount = all.Count(d => d.IsAudio);
             StatusMessage = $"{all.Count} dispositivo(s) conectado(s) — {audioCount} de audio.";
+            OWBLogger.Info($"Scan complete: {all.Count} total, {audioCount} audio");
         }
         catch (Exception ex)
         {
             StatusMessage = $"Error al escanear: {ex.Message}";
+            OWBLogger.Error(ex, "Refresh scan failed");
         }
     }
 
@@ -259,9 +268,11 @@ public partial class DevicesViewModel : ObservableObject
         if (SelectedDevice is null) return;
         if (!_ipc.IsConnected)
         {
+            OWBLogger.Warn($"ApplyCodec: service not connected (device={SelectedDevice.Name} codec={SelectedCodec})");
             StatusMessage = "El servicio OpenWinBlue no está activo. Inicia owb-service.exe para aplicar cambios en tiempo real.";
             return;
         }
+        OWBLogger.Info($"ApplyCodec: device='{SelectedDevice.Name}' codec={SelectedCodec} bitrate={SelectedBitrate}kbps");
         _ipc.SendSetCodec(SelectedCodec, "switch", (long)SelectedBitrate * 1000);
         StatusMessage = $"{SelectedCodec} a {SelectedBitrate} kbps aplicado a {SelectedDevice.Name}.";
     }
@@ -271,9 +282,11 @@ public partial class DevicesViewModel : ObservableObject
     private void InstallDriver()
     {
         if (SelectedDevice is null) return;
+        OWBLogger.Info($"InstallDriver requested for device='{SelectedDevice.Name}'");
 
         if (!TestSigningEnabled)
         {
+            OWBLogger.Warn("InstallDriver: Test Signing not enabled — prompting user");
             var result = WpfMsg.Show(
                 "El driver de OpenWinBlue no está firmado para producción.\n\n" +
                 "Para instalarlo en desarrollo necesitas activar Test Signing Mode:\n\n" +
@@ -293,9 +306,12 @@ public partial class DevicesViewModel : ObservableObject
             var infPath = FindInfPath();
             if (infPath is null)
             {
+                OWBLogger.Error("InstallDriver: owb_a2dp.inf not found in any candidate path");
                 StatusMessage = "No se encontró owb_a2dp.inf. Compila el driver primero.";
                 return;
             }
+
+            OWBLogger.Info($"InstallDriver: inf='{infPath}'");
 
             var logFile = Path.Combine(Path.GetTempPath(), "owb_install.log");
             var batFile = Path.Combine(Path.GetTempPath(), "owb_install.bat");
@@ -311,36 +327,49 @@ public partial class DevicesViewModel : ObservableObject
             });
 
             StatusMessage = $"Instalando driver… (espera UAC)";
+            OWBLogger.Info("InstallDriver: pnputil process launched, waiting for UAC approval");
 
             Task.Run(() =>
             {
                 proc?.WaitForExit(30_000);
                 var exitCode = proc?.ExitCode ?? -1;
+                var log = File.Exists(logFile) ? File.ReadAllText(logFile).Trim() : string.Empty;
 
+                OWBLogger.Info($"InstallDriver: pnputil exitCode={exitCode}");
+                if (!string.IsNullOrEmpty(log))
+                    OWBLogger.Info($"InstallDriver pnputil output:\n{log}");
+
+                OWBLogger.Info("InstallDriver: running ForceActivate");
                 ForceActivateA2dp(infPath);
 
-                var log = File.Exists(logFile) ? File.ReadAllText(logFile).Trim() : string.Empty;
                 var registered = exitCode == 0
                     || log.Contains("correctamente", StringComparison.OrdinalIgnoreCase)
                     || log.Contains("ya existe",     StringComparison.OrdinalIgnoreCase)
                     || log.Contains("successfully",  StringComparison.OrdinalIgnoreCase);
 
+                OWBLogger.Info($"InstallDriver: registered={registered}");
+
                 WpfApp.Current.Dispatcher.Invoke(() =>
                 {
                     StatusMessage = registered
                         ? "Driver registrado. Reconecta los auriculares para que Windows lo aplique."
-                        : $"Error al registrar driver (código {exitCode}).";
+                        : $"Error al registrar driver (código {exitCode}). Ver log: {OWBLogger.LogFilePath}";
                     RefreshCommand.Execute(null);
                 });
             });
         }
-        catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "InstallDriver");
+            StatusMessage = $"Error: {ex.Message}";
+        }
     }
     private bool CanInstall() => SelectedDevice?.IsAudio == true;
 
     [RelayCommand]
     private void EnableTestSigning()
     {
+        OWBLogger.Info("EnableTestSigning: launching bcdedit /set testsigning on");
         try
         {
             var proc = Process.Start(new ProcessStartInfo
@@ -352,9 +381,12 @@ public partial class DevicesViewModel : ObservableObject
             });
 
             proc?.WaitForExit(15_000);
+            var exitCode = proc?.ExitCode;
+            OWBLogger.Info($"EnableTestSigning: bcdedit exitCode={exitCode}");
 
-            if (proc?.ExitCode == 0)
+            if (exitCode == 0)
             {
+                OWBLogger.Info("EnableTestSigning: success — reboot required");
                 WpfMsg.Show(
                     "Test Signing activado.\n\nReinicia Windows para que surta efecto.\n" +
                     "Después podrás instalar el driver OpenWinBlue.",
@@ -364,19 +396,25 @@ public partial class DevicesViewModel : ObservableObject
             }
             else
             {
-                StatusMessage = $"Error al activar Test Signing (código {proc?.ExitCode}). " +
+                OWBLogger.Error($"EnableTestSigning: bcdedit failed with code {exitCode}");
+                StatusMessage = $"Error al activar Test Signing (código {exitCode}). " +
                                 "Asegúrate de aprobar el UAC y de ejecutar como Administrador.";
             }
 
             OnPropertyChanged(nameof(TestSigningEnabled));
         }
-        catch (Exception ex) { StatusMessage = $"Error: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "EnableTestSigning");
+            StatusMessage = $"Error: {ex.Message}";
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanReset))]
     private void ResetDriver()
     {
         if (SelectedDevice is null) return;
+        OWBLogger.Info($"ResetDriver: removing owb_a2dp.inf for device='{SelectedDevice.Name}'");
         try
         {
             var proc = Process.Start(new ProcessStartInfo
@@ -390,10 +428,15 @@ public partial class DevicesViewModel : ObservableObject
             Task.Run(() =>
             {
                 proc?.WaitForExit(15_000);
+                OWBLogger.Info($"ResetDriver: pnputil exitCode={proc?.ExitCode}");
                 WpfApp.Current.Dispatcher.Invoke(() => RefreshCommand.Execute(null));
             });
         }
-        catch (Exception ex) { StatusMessage = $"Error al restaurar: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "ResetDriver");
+            StatusMessage = $"Error al restaurar: {ex.Message}";
+        }
     }
     private bool CanReset() => SelectedDevice?.IsAudio == true;
 

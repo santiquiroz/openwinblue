@@ -15,7 +15,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        OWBLogger.Info($"App starting — OS: {Environment.OSVersion}, .NET: {Environment.Version}");
+
         DispatcherUnhandledException += (_, ex) => {
+            OWBLogger.Error(ex.Exception, "DispatcherUnhandledException");
             System.Windows.MessageBox.Show(
                 ex.Exception.ToString(),
                 "Unhandled Exception",
@@ -23,13 +26,16 @@ public partial class App : Application
                 System.Windows.MessageBoxImage.Error);
             ex.Handled = true;
         };
+
         SetupTrayIcon();
         ShowMainWindow();
         _ipc.Start();
+        OWBLogger.Info("App startup complete");
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        OWBLogger.Info("App exiting");
         _ipc.Stop();
         _trayIcon?.Dispose();
         base.OnExit(e);
