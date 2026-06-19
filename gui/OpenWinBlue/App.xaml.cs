@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Forms;
 using OpenWinBlue.Services;
@@ -15,7 +16,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        OWBLogger.Info($"App starting — OS: {Environment.OSVersion}, .NET: {Environment.Version}");
+        WriteStartupStep("OnStartup begin");
+        try { OWBLogger.Info($"App starting — OS: {Environment.OSVersion}, .NET: {Environment.Version}"); }
+        catch (Exception ex) { WriteStartupStep($"OWBLogger init failed: {ex.GetType().Name}: {ex.Message}"); }
 
         try
         {
@@ -48,9 +51,11 @@ public partial class App : Application
                 "UnhandledException");
         };
 
+        WriteStartupStep("SetupTrayIcon...");
         try
         {
             SetupTrayIcon();
+            WriteStartupStep("ShowMainWindow...");
             ShowMainWindow();
             _ipc.Start();
             OWBLogger.Info("App startup complete");
@@ -89,6 +94,14 @@ public partial class App : Application
         menu.Items.Add("Exit",  null, (_, _) => Shutdown());
         _trayIcon.ContextMenuStrip = menu;
         _trayIcon.DoubleClick     += (_, _) => ShowMainWindow();
+    }
+
+    private static void WriteStartupStep(string msg)
+    {
+        var path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenWinBlue", "startup.log");
+        try { File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n"); } catch { }
     }
 
     private void ShowMainWindow()
