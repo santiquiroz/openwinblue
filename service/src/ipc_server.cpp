@@ -7,24 +7,28 @@
 #include "ipc_server.h"
 #include "ipc_protocol.h"
 #include "a2dp_stream.h"
+#include "codec_controller.h"
 #include "owb_ioctl.h"
 #include "../ai/ai_pipeline.h"
 #include <cstring>
+#include <string>
 #include <string_view>
 
 namespace owb {
 
 struct IpcServer::Impl {
-    HANDLE              pipe    = INVALID_HANDLE_VALUE;
-    bool                running = false;
-    A2dpStream*         stream_ = nullptr;
-    owb::ai::AiPipeline* ai_   = nullptr;
+    HANDLE               pipe        = INVALID_HANDLE_VALUE;
+    bool                 running     = false;
+    A2dpStream*          stream_     = nullptr;
+    owb::ai::AiPipeline* ai_         = nullptr;
+    ICodecController*    controller_ = nullptr;
 };
 
-IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai)
+IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai, ICodecController* controller)
     : impl_(std::make_unique<Impl>()) {
-    impl_->stream_ = stream;
-    impl_->ai_     = ai;
+    impl_->stream_     = stream;
+    impl_->ai_         = ai;
+    impl_->controller_ = controller;
 }
 
 IpcServer::~IpcServer() { stop(); }
@@ -90,13 +94,20 @@ bool IpcServer::serve_one() {
                                       sizeof(ipc::StatusPayload) };
                 ipc::StatusPayload status{};
 
-                if (impl_->stream_ && impl_->stream_->is_open()) {
+                // Prefer the live pipeline for codec/streaming state; it reflects
+                // what the service is actually encoding right now.
+                if (impl_->controller_) {
+                    const std::string name = impl_->controller_->codec_name();
+                    strncpy_s(status.codec_name, sizeof(status.codec_name),
+                              name.empty() ? "SBC" : name.c_str(), _TRUNCATE);
+                    status.is_capturing = impl_->controller_->is_streaming() ? 1u : 0u;
+                } else if (impl_->stream_ && impl_->stream_->is_open()) {
                     OWB_DEVICE_STATE devState{};
                     if (impl_->stream_->get_device_state(&devState)) {
                         status.is_capturing = (devState.state == OWB_STATE_STREAMING) ? 1u : 0u;
-                        status.bitrate = (devState.state == OWB_STATE_STREAMING) ? 328000u : 0u;
-                        static const char* kNames[] = {"SBC","LDAC","aptX","aptX-HD","AAC","LC3"};
-                        if (devState.active_codec_id < 6u)
+                        static const char* kNames[] =
+                            {"SBC","LDAC","aptX","aptX-HD","AAC","LC3","aptX-Adaptive"};
+                        if (devState.active_codec_id < (sizeof(kNames)/sizeof(kNames[0])))
                             strncpy_s(status.codec_name, sizeof(status.codec_name),
                                       kNames[devState.active_codec_id], _TRUNCATE);
                     } else {
@@ -105,6 +116,7 @@ bool IpcServer::serve_one() {
                 } else {
                     strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
                 }
+                status.hfp_guard_on = 0u;  // reported by the GUI's Level-1 control
 
                 DWORD written = 0;
                 BOOL hdr_ok = WriteFile(impl_->pipe, &reply, sizeof(reply), &written, nullptr);
@@ -152,6 +164,11 @@ bool IpcServer::serve_one() {
                 else if (std::strncmp(codec_payload.codec_name, "aptX-HD", 7) == 0) codec_id = OWB_CODEC_APTXHD;
                 else if (std::strncmp(codec_payload.codec_name, "aptX",    4) == 0) codec_id = OWB_CODEC_APTX;
 
+                // Switch the user-mode encoder so the service actually produces
+                // frames in the requested codec (driver negotiation is separate).
+                if (impl_->controller_)
+                    impl_->controller_->set_codec_id(codec_id);
+
                 // Forward to driver via A2dpStream
                 bool success = false;
                 if (impl_->stream_) {
@@ -162,6 +179,7 @@ bool IpcServer::serve_one() {
                         std::string_view(codec_payload.param_key, key_len),
                         codec_payload.param_value);
                 }
+                if (impl_->controller_ && !impl_->stream_) success = true;
 
                 // Reply with CodecAck
                 ipc::MsgHeader ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };

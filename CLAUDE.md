@@ -65,8 +65,8 @@ dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --verbosity nor
   `C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Auxiliary/Build/vcvars64.bat`
   MSVC v145 (cl.exe 19.50.35717)
 - **dotnet**: .NET 10 SDK installed. Solution file uses `.slnx` format (new in .NET 10 SDK).
-- **CI (GitHub Actions)**: uses `windows-2022` runner (VS17, .NET 8). CI workflow uses
-  `windows-debug` preset and `net10.0-windows` TFM. Update CI dotnet version to `10.0.x`.
+- **CI (GitHub Actions)**: uses `windows-2022` runner (VS17). CI workflow uses the
+  `windows-debug` preset, `net10.0-windows` TFM, and `.NET 10.0.x` (setup-dotnet).
 
 ### Installer
 ```powershell
@@ -84,9 +84,9 @@ dotnet build installer/OpenWinBlue.wixproj -c Release
 | Codec libs | libldac (Apache 2.0), libopenaptx (LGPL), libsbc (LGPL), liblc3 (Apache 2.0) |
 | AI inference | ONNX Runtime 1.x + DirectML EP (any DX12 GPU / NPU / CPU fallback) |
 | AI models | DeepFilterNet3 (.onnx), RNNoise (BSD), custom ONNX models |
-| GUI | C# .NET 8, WPF, CommunityToolkit.Mvvm, MVVM pattern |
-| IPC | Named pipe (service ↔ GUI), JSON messages |
-| Installer | WiX Toolset v4 |
+| GUI | C# .NET 10, WPF, CommunityToolkit.Mvvm, MVVM pattern |
+| IPC | Named pipe (service ↔ GUI), binary length-prefixed messages (see ipc_protocol.h) |
+| Installer | WiX Toolset v5 |
 | Driver signing | Microsoft Hardware Dev Center attestation (CI pipeline) |
 | CI | GitHub Actions |
 
@@ -123,7 +123,8 @@ GUI (WPF)  ──named pipe──▶  Service (C++)  ──IOCTL──▶  Drive
   - Service: `std::expected<T, owb_error>` for fallible operations (C++23-style, backported).
   - GUI: log via `ILogger`, show user-visible errors in a dedicated error banner — never silently swallow.
 - **No global mutable state** in service or GUI. Driver uses device extension struct only.
-- **IPC protocol:** All messages are UTF-8 JSON lines over a named pipe. Schema versioned.
+- **IPC protocol:** Binary, length-prefixed messages (`MsgHeader` + packed payload structs,
+  little-endian) over a named pipe — see `service/src/ipc_protocol.h` / `gui/Models/IpcProtocol.cs`.
   Service is always the server. GUI reconnects on disconnect.
 
 ---
@@ -136,9 +137,10 @@ GUI (WPF)  ──named pipe──▶  Service (C++)  ──IOCTL──▶  Drive
 | `driver/src/avdtp.c` | AVDTP signaling state machine |
 | `driver/src/l2cap_stream.c` | L2CAP media channel management |
 | `driver/owb_a2dp.inf` | Driver INF — hardware IDs, service config |
-| `service/src/main.cpp` | Service entry, SCM registration |
+| `service/src/main.cpp` | Entry point: runs as a Windows Service (SCM) or `--console` for dev |
+| `service/src/stream_pipeline.cpp` | Runtime orchestrator: capture → AI → encode → driver |
 | `service/src/audio_capture.cpp` | WASAPI loopback/exclusive capture |
-| `service/src/a2dp_stream.cpp` | RTP packetization + IOCTL to driver |
+| `service/src/a2dp_stream.cpp` | IOCTL bridge to driver (RTP framing lives in the driver) |
 | `service/src/hfp_guard.cpp` | HFP/A2DP switching prevention |
 | `service/src/ipc_server.cpp` | Named pipe server |
 | `service/codecs/codec_interface.h` | Abstract codec interface all codecs implement |

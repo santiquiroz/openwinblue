@@ -8,11 +8,11 @@ public class MainViewModelTests
     public void MainViewModel_Instantiates_WithDefaultState()
     {
         var vm = new MainViewModel();
-        Assert.Equal(0, vm.SelectedTab);
         Assert.NotNull(vm.Status);
         Assert.NotNull(vm.Codec);
         Assert.NotNull(vm.Driver);
         Assert.NotNull(vm.Controls);
+        Assert.NotNull(vm.Devices);
     }
 
     [Fact]

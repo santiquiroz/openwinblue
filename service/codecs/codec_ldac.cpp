@@ -28,6 +28,9 @@ void CodecLdac::reinit() {
 
 std::string_view CodecLdac::name() const noexcept { return "LDAC"; }
 
+// LDAC encodes one LSU of 128 samples per channel per call → 256 interleaved.
+int CodecLdac::input_frame_samples() const noexcept { return LDACBT_ENC_LSU * 2; }
+
 std::ptrdiff_t CodecLdac::encode(std::span<const int16_t> input,
                                   std::span<uint8_t>       output) {
     if (!handle_ || output.empty() || input.empty()) return -1;

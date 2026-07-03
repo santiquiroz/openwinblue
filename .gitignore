@@ -1,21 +1,40 @@
 # Build outputs
 build/
 out/
-*.obj *.pdb *.ilk *.exp *.lib *.dll *.exe *.sys *.cat
-CMakeCache.txt CMakeFiles/
-/x64/ /x86/ /ARM/ /ARM64/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+*.sys
+*.cat
+CMakeCache.txt
+CMakeFiles/
+/x64/
+/x86/
+/ARM/
+/ARM64/
+driver/x64/
+driver/x86/
 
 # WiX artifacts
 *.wixobj
 *.wixpdb
 
 # .NET / Visual Studio
-bin/ obj/
-*.user *.suo .vs/
-packages/ *.nupkg
+bin/
+obj/
+*.user
+*.suo
+.vs/
+packages/
+*.nupkg
 
 # WDK / driver
-*.cer *.pfx
+*.cer
+*.pfx
 
 # IDE
 .vscode/
@@ -31,7 +50,9 @@ coverage/
 *.log
 
 # OS
-Thumbs.db .DS_Store desktop.ini
+Thumbs.db
+.DS_Store
+desktop.ini
 
 # ONNX models (large binaries, distributed separately)
 *.onnx

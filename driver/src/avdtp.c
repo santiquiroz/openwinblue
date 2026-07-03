@@ -141,6 +141,47 @@ static USHORT BuildAptxSetConfig(
     }
 }
 
+// Build AAC SET_CONFIGURATION payload (A2DP AAC spec, codec type 0x02).
+// MPEG-2 AAC LC | 44.1kHz | Stereo | 256 kbps CBR. Total: 12 bytes.
+static USHORT BuildAacSetConfig(
+    _Out_writes_bytes_(MaxLen) PUCHAR Buf,
+    _In_ UCHAR AcpSeid, _In_ UCHAR IntSeid, _In_ USHORT MaxLen)
+{
+    if (MaxLen < 12u) return 0u;
+    Buf[0]  = (UCHAR)((AcpSeid << 2u) & 0xFCu);  // ACP_SEID
+    Buf[1]  = (UCHAR)((IntSeid << 2u) & 0xFCu);  // INT_SEID
+    Buf[2]  = 0x07u;   // Service Category: Media Codec
+    Buf[3]  = 0x08u;   // LOSC = media type + codec type + 6 info bytes
+    Buf[4]  = 0x00u;   // Media Type: Audio
+    Buf[5]  = 0x02u;   // Codec Type: MPEG-2,4 AAC
+    Buf[6]  = 0x80u;   // Object Type: MPEG-2 AAC LC
+    Buf[7]  = 0x01u;   // Sampling freq [15:8] → 44.1kHz bit
+    Buf[8]  = 0x04u;   // Sampling freq [7:4]=0 | Channels=Stereo(0x04)
+    Buf[9]  = 0x03u;   // VBR=0 | bitrate[22:16] (256000 = 0x03E800)
+    Buf[10] = 0xE8u;   // bitrate[15:8]
+    Buf[11] = 0x00u;   // bitrate[7:0]
+    return 12u;
+}
+
+// Check if the GET_CAPABILITIES response advertises a standard (non-vendor)
+// media codec with the given codec type byte (e.g. 0x02 = AAC).
+static BOOLEAN CapabilitiesContainsCodecType(
+    _In_reads_bytes_opt_(Len) const UCHAR* Data, _In_ USHORT Len, _In_ UCHAR CodecType)
+{
+    if (!Data || Len < 4u) return FALSE;
+    USHORT i = 0u;
+    while (i + 1u < Len) {
+        UCHAR cat  = Data[i];
+        UCHAR losc = Data[i + 1u];
+        if (cat == 0x07u && losc >= 2u && (USHORT)(i + 2u + losc) <= Len) {
+            if (Data[i + 3u] == CodecType) return TRUE;
+        }
+        if (losc == 0u) break;
+        i = (USHORT)(i + 2u + losc);
+    }
+    return FALSE;
+}
+
 // Check if the GET_CAPABILITIES response payload contains a vendor codec
 // with the given 4-byte vendor ID and 2-byte codec ID.
 static BOOLEAN CapabilitiesContainsVendorCodec(
@@ -190,7 +231,14 @@ static VOID HandleGetCapabilitiesResponse(
         plen = BuildAptxSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                    DevExt->Avdtp.LocalSeid, sizeof(payload), FALSE);
         KdPrint(("OpenWinBlue: negotiating aptX Classic\n"));
+    } else if (preferred == OWB_CODEC_AAC &&
+               CapabilitiesContainsCodecType(Data, Len, 0x02u)) {
+        plen = BuildAacSetConfig(payload, DevExt->Avdtp.RemoteSeid,
+                                 DevExt->Avdtp.LocalSeid, sizeof(payload));
+        KdPrint(("OpenWinBlue: negotiating AAC\n"));
     } else {
+        // Note: LC3 is an LE Audio codec and is not negotiated over classic
+        // A2DP/AVDTP — an LC3 preference intentionally falls back to SBC here.
         plen = BuildSbcSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                   DevExt->Avdtp.LocalSeid, sizeof(payload));
         KdPrint(("OpenWinBlue: negotiating SBC (fallback)\n"));

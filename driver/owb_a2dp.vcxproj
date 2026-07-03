@@ -46,9 +46,12 @@
 
   <PropertyGroup Label="UserMacros" />
 
+  <!-- OutDir is anchored to ProjectDir (not SolutionDir): the driver is built as a
+       standalone vcxproj in CI where $(SolutionDir) is undefined. This keeps the
+       output at driver\x64\Debug\owb_a2dp.sys, which the CI verify step expects. -->
   <PropertyGroup>
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)$(Platform)\$(Configuration)\obj\</IntDir>
   </PropertyGroup>
 
   <ItemDefinitionGroup>

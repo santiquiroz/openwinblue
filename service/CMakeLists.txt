@@ -176,6 +176,7 @@ target_compile_options(owb_a2dp_stream PRIVATE
 add_executable(owb_service
     src/main.cpp
     src/audio_capture.cpp
+    src/stream_pipeline.cpp
 )
 target_include_directories(owb_service PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -188,7 +189,7 @@ target_compile_options(owb_service PRIVATE
 target_link_libraries(owb_service PRIVATE
     owb_codec_factory owb_codec_lc3 owb_codec_aac owb_hfp_guard owb_ipc_server owb_a2dp_stream
     owb_ai_pipeline
-    ole32 oleaut32 uuid Mmdevapi
+    ole32 oleaut32 uuid Mmdevapi advapi32
 )
 
 add_subdirectory(ai)

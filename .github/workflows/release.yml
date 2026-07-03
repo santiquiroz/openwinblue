@@ -19,20 +19,50 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Install WDK 11 via chocolatey
+        run: choco install windowsdriverkit11 --yes --no-progress
+        shell: pwsh
+
+      - name: Build driver (Release)
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -requires Microsoft.Component.MSBuild `
+            -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          & $msbuild driver\owb_a2dp.vcxproj `
+            /p:Configuration=Release /p:Platform=x64 `
+            /p:SignMode=Off /p:EnableInf2cat=false /t:Build /nologo
+        shell: pwsh
+
       - name: Build service (Release)
         run: |
           cmake --preset windows-release
-          cmake --build build/release --target owb_service
+          cmake --build build/release --target owb_service --config Release
+        shell: pwsh
 
-      - name: Build GUI (Release)
-        run: dotnet build gui/OpenWinBlue.slnx -c Release
+      - name: Publish GUI (Release, single-file)
+        run: |
+          dotnet publish gui/OpenWinBlue/OpenWinBlue.csproj -c Release -r win-x64 `
+            --self-contained true -p:PublishSingleFile=true `
+            -o gui/OpenWinBlue/bin/Publish/win-x64
+        shell: pwsh
 
-      - name: Sign driver (stub — Phase 2)
+      - name: Normalize service output path for the installer
+        run: |
+          $dst = "build/release/service"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          $exe = Get-ChildItem -Path "build/release/service" -Recurse -Filter owb_service.exe |
+                 Select-Object -First 1
+          if (-not $exe) { throw "owb_service.exe not found under build/release/service" }
+          Copy-Item $exe.FullName (Join-Path $dst "owb_service.exe") -Force
+        shell: pwsh
+
+      - name: Test-sign driver and assemble package
         run: |
           pwsh tools/sign-driver.ps1 `
             -InfPath driver/owb_a2dp.inf `
-            -SysPath driver/build/x64/Release/owb_a2dp.sys `
-            -OutDir build/signed
+            -SysPath driver/x64/Release/owb_a2dp.sys `
+            -OutDir driver/x64/Release
+        shell: pwsh
 
       - name: Build installer
         run: dotnet build installer/OpenWinBlue.wixproj -c Release
@@ -42,8 +72,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            installer/bin/x64/Release/OpenWinBlue-Setup.msi
             build/release/service/owb_service.exe
-            gui/OpenWinBlue/bin/Release/net10.0-windows/OpenWinBlue.exe
-            installer/bin/Release/OpenWinBlue-Setup.msi
+            gui/OpenWinBlue/bin/Publish/win-x64/OpenWinBlue.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

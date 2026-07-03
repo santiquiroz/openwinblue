@@ -2,7 +2,7 @@
 #pragma once
 #include <memory>
 
-namespace owb { class A2dpStream; }
+namespace owb { class A2dpStream; class ICodecController; }
 namespace owb::ai { class AiPipeline; }
 
 namespace owb {
@@ -16,7 +16,8 @@ namespace owb {
 class IpcServer {
 public:
     explicit IpcServer(A2dpStream* stream = nullptr,
-                       ai::AiPipeline* ai = nullptr);
+                       ai::AiPipeline* ai = nullptr,
+                       ICodecController* controller = nullptr);
     ~IpcServer();
 
     // Create the named pipe. Returns false on failure.

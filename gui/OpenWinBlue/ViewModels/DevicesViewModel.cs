@@ -551,11 +551,12 @@ public partial class DevicesViewModel : ObservableObject
     {
         var candidates = new[]
         {
+            // Installed layout: owb_a2dp.inf sits next to OpenWinBlue.exe.
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "owb_a2dp.inf"),
+            // Dev tree: gui\OpenWinBlue\bin\<cfg>\<tfm> → ..\..\..\..\driver.
             Path.GetFullPath(Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
                 "..", "..", "..", "..", "driver", "owb_a2dp.inf")),
-            @"c:\suru\open winblue\driver\owb_a2dp.inf",
         };
         return candidates.FirstOrDefault(File.Exists);
     }
@@ -578,17 +579,17 @@ public partial class DevicesViewModel : ObservableObject
             n.Contains("ultra de "))
             return ("Teléfono / Móvil", "📱", false);
 
+        // Brand/model tokens that reliably indicate audio sinks. Weak generic
+        // tokens ("pro", "office", "par de") were removed — they misclassified
+        // non-audio devices. The Class-of-Device major class below is the fallback.
         if (n.Contains("headset") || n.Contains("headphone") || n.Contains("auricular") ||
             n.Contains("earbud") || n.Contains("earphone") || n.Contains("buds") ||
-            n.Contains("cloud ") || n.Contains("recon ") || n.Contains("arctis") ||
-            n.Contains("kraken") || n.Contains("razer") || n.Contains("corsair") ||
-            n.Contains("hyperx") || n.Contains("jabra") || n.Contains("sennheiser") ||
-            n.Contains("bose") || n.Contains("jbl") || n.Contains("airpods") ||
-            n.Contains("beats") || n.Contains("wh-") || n.Contains("wf-") ||
-            n.Contains("linkbuds") || n.Contains("sony wh") || n.Contains("soundcore") ||
-            n.Contains("anker") || n.Contains("az09") || n.Contains("oficina") ||
-            n.Contains("office") || n.Contains("par de") || n.Contains("pro ") ||
-            n.Contains(" pro") || n.Contains("speaker") || n.Contains("altavoz"))
+            n.Contains("arctis") || n.Contains("kraken") || n.Contains("razer") ||
+            n.Contains("corsair") || n.Contains("hyperx") || n.Contains("jabra") ||
+            n.Contains("sennheiser") || n.Contains("bose") || n.Contains("jbl") ||
+            n.Contains("airpods") || n.Contains("beats") || n.Contains("wh-") ||
+            n.Contains("wf-") || n.Contains("linkbuds") || n.Contains("soundcore") ||
+            n.Contains("anker") || n.Contains("speaker") || n.Contains("altavoz"))
             return ("Auriculares / Audio", "🎧", true);
 
         int major = (cod >> 8) & 0x1F;

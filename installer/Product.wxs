@@ -24,6 +24,23 @@
           <File Id="owb_service" Name="owb-service.exe"
                 Source="$(var.ServiceBuildDir)\owb_service.exe"
                 KeyPath="yes"/>
+          <!-- Registra owb-service como servicio Windows (arranca automático como
+               LocalSystem, que es la cuenta con acceso al device del driver por SDDL). -->
+          <ServiceInstall Id="OwbServiceInstall"
+                          Name="owb-service"
+                          DisplayName="OpenWinBlue Audio Service"
+                          Description="Transmite el audio del sistema a Bluetooth A2DP con selección de códec."
+                          Type="ownProcess"
+                          Start="auto"
+                          ErrorControl="normal"
+                          Account="LocalSystem"
+                          Vital="no"/>
+          <ServiceControl Id="OwbServiceControl"
+                          Name="owb-service"
+                          Start="install"
+                          Stop="both"
+                          Remove="uninstall"
+                          Wait="no"/>
         </Component>
 
         <Component Id="GuiExe" Guid="B2C3D4E5-F6A7-8901-BCDE-F12345678901" Bitness="always64">

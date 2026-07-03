@@ -14,6 +14,7 @@ void CodecLc3::reinit() {
     unsigned sz = lc3_encoder_size(kDtUs, freq_);
     mem_ = std::malloc(sz);
     enc_ = lc3_setup_encoder(kDtUs, freq_, 0, mem_);
+    frame_samples_ = lc3_frame_samples(kDtUs, freq_);
 }
 
 std::string_view CodecLc3::name() const noexcept { return "LC3"; }

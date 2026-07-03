@@ -4,7 +4,7 @@
 
 OpenWinBlue replaces the Windows inbox Bluetooth A2DP driver (`btavchdt.sys`) with a custom kernel driver that unlocks codec support Windows never offered — LDAC, aptX HD, aptX Low Latency — and adds an AI enhancement pipeline that runs on any GPU via DirectML (AMD, Intel, NVIDIA, Qualcomm NPU, CPU fallback).
 
-> **Status:** Core implementation complete (Phases 1–3). Driver installs in test-signing mode. Currently in hardware testing phase with real Bluetooth devices. Seeking USB Bluetooth dongle testers and attestation signing contributors.  
+> **Status:** Software audio path wired end-to-end — WASAPI capture → codec encode → driver IOCTL runs on a dedicated pipeline inside a real Windows Service (`owb-service`). Driver installs in test-signing mode. Now in hardware validation with real Bluetooth devices. Seeking USB Bluetooth dongle testers and attestation-signing contributors.  
 > Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
@@ -53,17 +53,17 @@ OpenWinBlue is the free, open-source, GPLv3-licensed alternative.
 - Adaptive bitrate toggle (auto-reduces quality before dropouts)
 
 ### HFP / A2DP Switching Prevention
-Three protection levels to keep headphones in stereo A2DP mode:
-- **Level 1** — Registry-based service control (GUI toggle for `BthHFSrv`)
-- **Level 2** — Audio session interception
-- **Level 3** — Kernel-level blocking (driver)
+Layered protection to keep headphones in stereo A2DP mode:
+- **Level 1 (implemented)** — Registry/service control: GUI toggle that disables `BthHFSrv`
+- **Level 2 (planned)** — Audio session interception (`HfpGuard` session hooks are scaffolded)
+- **Level 3 (planned)** — Kernel-level blocking in the driver
 
 ### AI Enhancement (any GPU via DirectML)
 All AI runs locally using ONNX Runtime with the DirectML execution provider — works on **any DirectX 12 GPU** with automatic CPU fallback.
 
 | Feature | Engine | Added Latency | Status |
 |---------|--------|--------------|--------|
-| Noise Reduction | DeepFilterNet3 (ONNX) | ~12ms GPU / ~20ms CPU | ✅ Done |
+| Noise Reduction (voice/HFP) | RNNoise; DeepFilterNet3 optional | ~12ms GPU / ~20ms CPU | ✅ RNNoise (DFN3 model pending) |
 | Psychoacoustic Pre-Emphasis | Custom DSP | <1ms | ✅ Done |
 | Smart Adaptive Bitrate | RNN (ONNX, CPU) | <1ms | ✅ Done |
 | Hi-Res Upsampling | CNN (ONNX+DirectML) | ~5–40ms | 🔮 Phase 4 |
@@ -232,8 +232,11 @@ dotnet build installer/OpenWinBlue.wixproj -c Debug
 ```
 
 **Key design choices:**
-- Kernel driver handles only transport — stays small and auditable
-- All audio encoding and AI processing run in user-mode service — safe to update without rebooting
+- Kernel driver handles only transport — stays small and auditable. Its control device is
+  restricted to SYSTEM/Administrators (SDDL), so only the service can inject frames.
+- All audio encoding and AI processing run in a user-mode Windows Service (`owb-service`,
+  auto-start LocalSystem) — safe to update without rebooting. A dedicated `StreamPipeline`
+  thread drives capture → encode → driver; RTP/media framing is applied per codec in the driver.
 - GUI communicates via named pipe — the service runs independently of the UI
 - Driver is installed via `pnputil` with universal A2DP UUID matching, not device-specific
 
@@ -277,7 +280,7 @@ dotnet build installer/OpenWinBlue.wixproj -c Debug
 | LDAC | ✅ | ✅ |
 | aptX HD | ✅ | ✅ |
 | aptX Low Latency | ✅ | ✅ |
-| HFP prevention | ✅ (3 levels) | Partial |
+| HFP prevention | ✅ (Level 1; L2/L3 planned) | Partial |
 | AI Enhancement | ✅ (DirectML, any GPU) | ❌ |
 | Rollback guarantee | ✅ (script + GUI + log) | Manual only |
 | Application log | ✅ `%LOCALAPPDATA%\OpenWinBlue\owb.log` | ❌ |

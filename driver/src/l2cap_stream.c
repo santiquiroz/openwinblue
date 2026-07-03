@@ -4,6 +4,7 @@
 #include "l2cap_stream.h"
 #include "avdtp.h"
 #include "owb_a2dp.h"
+#include "../owb_ioctl.h"   // OWB_CODEC_* ids
 #include <bthioctl.h>   // IOCTL_INTERNAL_BTH_SUBMIT_BRB
 
 // RTP header (12 bytes packed, RFC 3550).
@@ -191,6 +192,31 @@ NTSTATUS L2capSendSignaling(
     return status;
 }
 
+// Per-codec A2DP media framing policy.
+// use_rtp:        prepend the 12-byte RTP header (RFC 3550).
+// payload_header: prepend the 1-byte codec payload header (SBC/LDAC frame count).
+// ts_incr:        RTP timestamp advance (PCM samples represented by one frame).
+// aptX streams raw codec bytes with no RTP and no payload header.
+static VOID OwbMediaFraming(
+    _In_ ULONG CodecId,
+    _Out_ BOOLEAN* UseRtp, _Out_ BOOLEAN* PayloadHeader, _Out_ ULONG* TsIncr)
+{
+    switch (CodecId) {
+        case OWB_CODEC_APTX:
+        case OWB_CODEC_APTXHD:
+        case OWB_CODEC_APTX_ADAPTIVE:
+            *UseRtp = FALSE; *PayloadHeader = FALSE; *TsIncr = 0u;   break;
+        case OWB_CODEC_AAC:
+            *UseRtp = TRUE;  *PayloadHeader = FALSE; *TsIncr = 1024u; break;
+        case OWB_CODEC_LC3:
+            *UseRtp = TRUE;  *PayloadHeader = FALSE; *TsIncr = 480u;  break;
+        case OWB_CODEC_LDAC:
+        case OWB_CODEC_SBC:
+        default:
+            *UseRtp = TRUE;  *PayloadHeader = TRUE;  *TsIncr = 128u;  break;
+    }
+}
+
 // L2CAP media frame send
 NTSTATUS L2capSendMediaFrame(
     _In_ POWB_DEVICE_EXTENSION DevExt,
@@ -203,9 +229,14 @@ NTSTATUS L2capSendMediaFrame(
     if (!DevExt->BthInterface.BthAllocateBrb)
         return STATUS_DEVICE_NOT_READY;
 
-    UNREFERENCED_PARAMETER(CodecId);
+    BOOLEAN use_rtp = TRUE, payload_hdr = TRUE;
+    ULONG   ts_incr = 128u;
+    OwbMediaFraming(CodecId, &use_rtp, &payload_hdr, &ts_incr);
 
-    ULONG pkt_len_u = sizeof(OWB_RTP_HEADER) + 1u + (ULONG)FrameLen;
+    const ULONG rtp_len = use_rtp ? (ULONG)sizeof(OWB_RTP_HEADER) : 0u;
+    const ULONG hdr_len = payload_hdr ? 1u : 0u;
+
+    ULONG pkt_len_u = rtp_len + hdr_len + (ULONG)FrameLen;
     if (pkt_len_u > 0xFFFFu) return STATUS_INVALID_PARAMETER;
     const USHORT pkt_len = (USHORT)pkt_len_u;
 
@@ -213,16 +244,18 @@ NTSTATUS L2capSendMediaFrame(
                                           (SIZE_T)pkt_len, 'RTPM');
     if (!pkt) return STATUS_INSUFFICIENT_RESOURCES;
 
-    OWB_RTP_HEADER* hdr = (OWB_RTP_HEADER*)pkt;
-    hdr->vpxcc     = 0x80u;
-    hdr->mpt       = 0x60u;
-    hdr->seq_num   = RtlUshortByteSwap(DevExt->RtpSeqNum++);
-    hdr->timestamp = RtlUlongByteSwap(DevExt->RtpTimestamp);
-    hdr->ssrc      = RtlUlongByteSwap(0x00000001UL);
-    DevExt->RtpTimestamp += 128u;  // blocks(16) x subbands(8) = 128 PCM samples/frame
-
-    pkt[sizeof(OWB_RTP_HEADER)] = 0x01u;  // SBC: 1 frame, no fragmentation
-    RtlCopyMemory(pkt + sizeof(OWB_RTP_HEADER) + 1u, FrameData, FrameLen);
+    if (use_rtp) {
+        OWB_RTP_HEADER* hdr = (OWB_RTP_HEADER*)pkt;
+        hdr->vpxcc     = 0x80u;
+        hdr->mpt       = 0x60u;
+        hdr->seq_num   = RtlUshortByteSwap(DevExt->RtpSeqNum++);
+        hdr->timestamp = RtlUlongByteSwap(DevExt->RtpTimestamp);
+        hdr->ssrc      = RtlUlongByteSwap(0x00000001UL);
+        DevExt->RtpTimestamp += ts_incr;
+    }
+    if (payload_hdr)
+        pkt[rtp_len] = 0x01u;  // 1 frame, no fragmentation
+    RtlCopyMemory(pkt + rtp_len + hdr_len, FrameData, FrameLen);
 
     struct _BRB_L2CA_ACL_TRANSFER* brb =
         (struct _BRB_L2CA_ACL_TRANSFER*)

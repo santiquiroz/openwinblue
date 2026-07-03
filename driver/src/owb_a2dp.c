@@ -4,6 +4,7 @@
 #include "avdtp.h"
 #include "l2cap_stream.h"
 #include "ioctl.h"
+#include <wdmsec.h>   // SDDL_DEVOBJ_SYS_ALL_ADMIN_ALL
 
 // PASSIVE_LEVEL worker: reads pending AVDTP signaling data via BRB and processes it.
 // Enqueued by L2capSignalingIndicationCallback at DISPATCH_LEVEL when
@@ -76,6 +77,12 @@ OwbEvtDeviceAdd(
     UNREFERENCED_PARAMETER(Driver);
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, OWB_DEVICE_EXTENSION);
+
+    // Restrict the control device to SYSTEM + Administrators. The user-mode
+    // service runs as LocalSystem; normal user processes must not be able to
+    // open \\.\OpenWinBlue and inject audio frames or codec-config IOCTLs.
+    DECLARE_CONST_UNICODE_STRING(sddl, SDDL_DEVOBJ_SYS_ALL_ADMIN_ALL);
+    (VOID)WdfDeviceInitAssignSDDLString(DeviceInit, &sddl);
 
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {

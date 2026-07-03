@@ -68,6 +68,12 @@ CodecSbc::~CodecSbc() = default;
 
 std::string_view CodecSbc::name() const noexcept { return "SBC"; }
 
+// One SBC frame at a time: codesize bytes of PCM → one media packet (frame count 1).
+int CodecSbc::input_frame_samples() const noexcept {
+    const size_t codesize = sbc_get_codesize(sbc_.get());
+    return static_cast<int>(codesize / sizeof(int16_t));
+}
+
 std::ptrdiff_t CodecSbc::encode(std::span<const int16_t> input,
                                  std::span<uint8_t>       output) {
     if (output.empty()) return -1;

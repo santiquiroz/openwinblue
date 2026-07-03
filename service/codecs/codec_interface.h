@@ -28,6 +28,11 @@ public:
     virtual std::ptrdiff_t encode(std::span<const int16_t> input,
                                    std::span<uint8_t>       output) = 0;
 
+    // Interleaved int16 sample count consumed per encode() call, so the streaming
+    // orchestrator can feed exactly one codec frame per driver media packet.
+    // 0 means "encode() drains the whole buffer" (SBC/aptX loop internally).
+    virtual int input_frame_samples() const noexcept { return 0; }
+
     // Apply a configuration parameter. Returns false if the key is unknown.
     virtual bool set_param(CodecParam param) = 0;
 
