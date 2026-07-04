@@ -2,6 +2,7 @@
 // AVDTP signaling state machine.
 #include "avdtp.h"
 #include "owb_a2dp.h"
+#include "owb_trace.h"
 #include "l2cap_stream.h"
 #include "../owb_ioctl.h"
 
@@ -10,6 +11,7 @@ VOID AvdtpContextInit(_Out_ POWB_AVDTP_CONTEXT Ctx) {
     Ctx->State         = AvdtpStateIdle;
     Ctx->LocalSeid     = 0x01;
     Ctx->ActiveCodecId = OWB_CODEC_SBC;
+    OwbLog("AVDTP: contexto inicializado (SEID local=0x%02x)", Ctx->LocalSeid);
 }
 
 // Build and send a single-packet AVDTP command.
@@ -23,7 +25,10 @@ NTSTATUS AvdtpSendCommand(
     const USHORT pkt_len = (USHORT)(2u + PayloadLen);
     PUCHAR buf = (PUCHAR)ExAllocatePool2(POOL_FLAG_NON_PAGED,
                                           (SIZE_T)pkt_len, 'AVDT');
-    if (!buf) return STATUS_INSUFFICIENT_RESOURCES;
+    if (!buf) {
+        OwbLog("AVDTP TX: sin memoria para cmd 0x%02x", SignalId);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
     DevExt->Avdtp.TransactionId = (UCHAR)((DevExt->Avdtp.TransactionId + 1u) & 0x0Fu);
 
@@ -36,14 +41,20 @@ NTSTATUS AvdtpSendCommand(
         RtlCopyMemory(buf + 2, Payload, PayloadLen);
 
     NTSTATUS status = L2capSendSignaling(DevExt, buf, pkt_len);
+    OwbLog("AVDTP TX: cmd signal=0x%02x txid=%u len=%u -> 0x%x",
+           SignalId, DevExt->Avdtp.TransactionId, pkt_len, status);
     ExFreePoolWithTag(buf, 'AVDT');
     return status;
 }
 
 NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt) {
-    if (DevExt->Avdtp.State != AvdtpStateIdle)
+    if (DevExt->Avdtp.State != AvdtpStateIdle) {
+        OwbLog("AvdtpConnect: rechazado, estado=%s",
+               OwbAvdtpStateName(DevExt->Avdtp.State));
         return STATUS_INVALID_DEVICE_STATE;
+    }
 
+    OwbLog("AvdtpConnect: enviando DISCOVER");
     NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_DISCOVER, NULL, 0u);
     if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateDiscovering;
     return st;
@@ -55,18 +66,24 @@ static VOID HandleDiscoverResponse(
     _In_reads_bytes_opt_(Len) const UCHAR* Data,
     _In_ USHORT Len)
 {
-    if (!Data || Len == 0u) return;
+    if (!Data || Len == 0u) {
+        OwbLog("DISCOVER rsp: payload vacio");
+        return;
+    }
+    OwbLog("DISCOVER rsp: %u bytes (%u SEPs)", Len, (USHORT)(Len / 2u));
     for (USHORT i = 0u; i + 1u < Len; i += 2u) {
         UCHAR tsep = (Data[i] >> 1u) & 0x01u;  // bit 1 = TSEP per AVDTP spec §8.6.2
         if (tsep == 0x01u) {   // 1 = SNK (audio sink), 0 = SRC
             DevExt->Avdtp.RemoteSeid = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
             DevExt->Avdtp.State = AvdtpStateConfiguring;
+            OwbLog("DISCOVER rsp: sink SEID=0x%02x -> GET_CAPABILITIES",
+                   DevExt->Avdtp.RemoteSeid);
             UCHAR payload = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
             AvdtpSendCommand(DevExt, AVDTP_MSG_GET_CAPABILITIES, &payload, 1u);
             return;
         }
     }
-    KdPrint(("OpenWinBlue: AVDTP DISCOVER found no audio sink SEID\n"));
+    OwbLog("DISCOVER rsp: sin SEID de audio sink");
 }
 
 // Build SBC SET_CONFIGURATION payload (A2DP spec Table 4.25).
@@ -216,53 +233,59 @@ static VOID HandleGetCapabilitiesResponse(
     USHORT plen = 0u;
     ULONG preferred = DevExt->PreferredCodecId;
 
+    OwbLog("GET_CAPABILITIES rsp: %u bytes, codec preferido=%lu", Len, preferred);
+
     if (preferred == OWB_CODEC_LDAC &&
         CapabilitiesContainsVendorCodec(Data, Len, 0x0000012DUL, 0x00AAu)) {
         plen = BuildLdacSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                   DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating LDAC\n"));
+        OwbLog("negociando LDAC");
     } else if (preferred == OWB_CODEC_APTXHD &&
                CapabilitiesContainsVendorCodec(Data, Len, 0x000000D7UL, 0x0024u)) {
         plen = BuildAptxSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                    DevExt->Avdtp.LocalSeid, sizeof(payload), TRUE);
-        KdPrint(("OpenWinBlue: negotiating aptX HD\n"));
+        OwbLog("negociando aptX HD");
     } else if (preferred == OWB_CODEC_APTX &&
                CapabilitiesContainsVendorCodec(Data, Len, 0x0000004FUL, 0x0001u)) {
         plen = BuildAptxSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                    DevExt->Avdtp.LocalSeid, sizeof(payload), FALSE);
-        KdPrint(("OpenWinBlue: negotiating aptX Classic\n"));
+        OwbLog("negociando aptX Classic");
     } else if (preferred == OWB_CODEC_AAC &&
                CapabilitiesContainsCodecType(Data, Len, 0x02u)) {
         plen = BuildAacSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                  DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating AAC\n"));
+        OwbLog("negociando AAC");
     } else {
         // Note: LC3 is an LE Audio codec and is not negotiated over classic
         // A2DP/AVDTP — an LC3 preference intentionally falls back to SBC here.
         plen = BuildSbcSetConfig(payload, DevExt->Avdtp.RemoteSeid,
                                   DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating SBC (fallback)\n"));
+        OwbLog("negociando SBC (fallback)");
     }
 
     if (plen == 0u) {
-        KdPrint(("OpenWinBlue: failed to build SET_CONFIGURATION payload\n"));
+        OwbLog("SET_CONFIGURATION: no se pudo construir payload");
         return;
     }
     NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SET_CONFIGURATION, payload, plen);
     if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateConfigured;
+    else OwbLog("SET_CONFIGURATION: envio fallo 0x%x", st);
 }
 
 static VOID HandleSetConfigurationResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
+    OwbLog("SET_CONFIGURATION aceptada -> enviando OPEN");
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
     NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_OPEN, &seid, 1u);
     if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateOpen;
+    else OwbLog("OPEN: envio fallo 0x%x", st);
 }
 
 static VOID HandleOpenResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
+    OwbLog("OPEN aceptada -> abriendo canal de media");
     // Open the A2DP media L2CAP channel before sending AVDTP START.
     NTSTATUS st = L2capOpenMediaChannel(DevExt);
     if (!NT_SUCCESS(st)) {
-        KdPrint(("OpenWinBlue: media channel open failed 0x%x — aborting\n", st));
+        OwbLog("canal de media fallo 0x%x - abortando (vuelve a Idle)", st);
         DevExt->Avdtp.State = AvdtpStateIdle;
         return;  // Don't send START without a media channel
     }
@@ -273,7 +296,8 @@ static VOID HandleOpenResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
 
 static VOID HandleStartResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
     DevExt->Avdtp.State = AvdtpStateStreaming;
-    KdPrint(("OpenWinBlue: A2DP streaming started\n"));
+    OwbLog("*** A2DP STREAMING INICIADO (codec=%lu) ***",
+           DevExt->Avdtp.ActiveCodecId);
 }
 
 NTSTATUS AvdtpSetPreferredCodec(
@@ -281,13 +305,18 @@ NTSTATUS AvdtpSetPreferredCodec(
     _In_ ULONG                 NewCodecId)
 {
     DevExt->PreferredCodecId = NewCodecId;
-    KdPrint(("OpenWinBlue: preferred codec set to %lu\n", NewCodecId));
+    OwbLog("codec preferido -> %lu (estado=%s)",
+           NewCodecId, OwbAvdtpStateName(DevExt->Avdtp.State));
 
     // If currently streaming, trigger reconfiguration: SUSPEND → re-negotiate → START.
     if (DevExt->Avdtp.State == AvdtpStateStreaming) {
+        OwbLog("streaming activo -> SUSPEND + renegociacion");
         UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
         NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SUSPEND, &seid, 1u);
-        if (!NT_SUCCESS(st)) return st;
+        if (!NT_SUCCESS(st)) {
+            OwbLog("SUSPEND fallo 0x%x", st);
+            return st;
+        }
         DevExt->Avdtp.State = AvdtpStateIdle;
         return AvdtpConnect(DevExt);
     }
@@ -299,15 +328,21 @@ VOID AvdtpHandleSignalingPacket(
     _In_reads_bytes_(Length) const UCHAR* Data,
     _In_    USHORT Length)
 {
-    if (Length < 2u) return;
+    if (Length < 2u) {
+        OwbLog("AVDTP RX: paquete corto (%u bytes) - descartado", Length);
+        return;
+    }
 
     const UCHAR msg_type  = Data[0] & 0x03u;
     const UCHAR signal_id = Data[1] & 0x3Fu;
     const UCHAR* payload  = (Length > 2u) ? Data + 2 : NULL;
     const USHORT pay_len  = (Length > 2u) ? (USHORT)(Length - 2u) : 0u;
 
+    OwbLog("AVDTP RX: type=%u signal=0x%02x len=%u estado=%s",
+           msg_type, signal_id, Length, OwbAvdtpStateName(DevExt->Avdtp.State));
+
     if (msg_type != AVDTP_MSG_RESPONSE_ACCEPT) {
-        KdPrint(("OpenWinBlue: AVDTP rejected signal=0x%02x\n", signal_id));
+        OwbLog("AVDTP RX: RECHAZO/no-accept signal=0x%02x type=%u", signal_id, msg_type);
         return;
     }
 
@@ -328,7 +363,7 @@ VOID AvdtpHandleSignalingPacket(
             HandleStartResponse(DevExt);
             break;
         default:
-            KdPrint(("OpenWinBlue: unknown AVDTP response 0x%02x\n", signal_id));
+            OwbLog("AVDTP RX: respuesta desconocida 0x%02x", signal_id);
             break;
     }
 }

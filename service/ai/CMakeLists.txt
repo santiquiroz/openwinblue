@@ -82,9 +82,9 @@ target_compile_definitions(owb_ai_pipeline PUBLIC
 )
 if(OWB_HAVE_ONNXRUNTIME)
     target_include_directories(owb_ai_pipeline PRIVATE ${ONNXRUNTIME_INCLUDE_DIR})
-    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise ${ONNXRUNTIME_LIB})
+    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise owb_log ${ONNXRUNTIME_LIB})
 else()
-    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise)
+    target_link_libraries(owb_ai_pipeline PUBLIC owb_rnnoise owb_log)
 endif()
 target_compile_options(owb_ai_pipeline PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>

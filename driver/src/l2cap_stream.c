@@ -4,6 +4,7 @@
 #include "l2cap_stream.h"
 #include "avdtp.h"
 #include "owb_a2dp.h"
+#include "owb_trace.h"
 #include "../owb_ioctl.h"   // OWB_CODEC_* ids
 #include <bthioctl.h>   // IOCTL_INTERNAL_BTH_SUBMIT_BRB
 
@@ -31,7 +32,10 @@ NTSTATUS L2capSubmitBrb(
                                    WDF_REQUEST_REUSE_NO_FLAGS,
                                    STATUS_NOT_SUPPORTED);
     NTSTATUS status = WdfRequestReuse(DevExt->BrbRequest, &reuseParams);
-    if (!NT_SUCCESS(status)) return status;
+    if (!NT_SUCCESS(status)) {
+        OwbLog("SubmitBrb: WdfRequestReuse fallo 0x%x", status);
+        return status;
+    }
 
     WDF_MEMORY_DESCRIPTOR memDesc;
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memDesc, Brb, BrbSize);
@@ -67,6 +71,8 @@ VOID L2capSignalingIndicationCallback(
         case IndicationRecvPacket:
             // Store pending length; work item will read the data via BRB IN.
             devExt->PendingRecvLen = Parameters->Parameters.RecvPacket.PacketLength;
+            OwbLog("L2CAP ind: RecvPacket %lu bytes -> encolando work item",
+                   devExt->PendingRecvLen);
             WdfWorkItemEnqueue(devExt->AvdtpWorkItem);
             break;
 
@@ -74,10 +80,11 @@ VOID L2capSignalingIndicationCallback(
             // Remote side closed the channel.
             devExt->SignalingChannelHandle = 0;
             devExt->Avdtp.State = AvdtpStateIdle;
-            KdPrint(("OpenWinBlue: signaling channel disconnected\n"));
+            OwbLog("L2CAP ind: canal de signaling DESCONECTADO por remoto");
             break;
 
         default:
+            OwbLog("L2CAP ind: no manejada (%d)", (int)Indication);
             break;
     }
 }
@@ -85,10 +92,16 @@ VOID L2capSignalingIndicationCallback(
 // L2CAP signaling channel open
 NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 {
-    if (!DevExt->BthInterface.BthAllocateBrb)
+    if (!DevExt->BthInterface.BthAllocateBrb) {
+        OwbLog("OpenSignaling: sin interfaz BthPort (DEVICE_NOT_READY)");
         return STATUS_DEVICE_NOT_READY;
-    if (DevExt->RemoteBtAddress == 0)
+    }
+    if (DevExt->RemoteBtAddress == 0) {
+        OwbLog("OpenSignaling: sin BT addr remota (DEVICE_NOT_CONNECTED)");
         return STATUS_DEVICE_NOT_CONNECTED;
+    }
+    OwbLog("OpenSignaling: abriendo PSM 0x%04x hacia %012I64x",
+           AVDTP_SIGNALING_PSM, DevExt->RemoteBtAddress);
 
     struct _BRB_L2CA_OPEN_CHANNEL* brb =
         (struct _BRB_L2CA_OPEN_CHANNEL*)
@@ -111,11 +124,10 @@ NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     if (NT_SUCCESS(status)) {
         DevExt->SignalingChannelHandle = brb->ChannelHandle;
         DevExt->Avdtp.State = AvdtpStateConnecting;
-        KdPrint(("OpenWinBlue: signaling channel opened, handle=0x%p\n",
-                 (PVOID)brb->ChannelHandle));
+        OwbLog("OpenSignaling: canal abierto handle=0x%p", (PVOID)brb->ChannelHandle);
         status = AvdtpConnect(DevExt);
     } else {
-        KdPrint(("OpenWinBlue: BRB_L2CA_OPEN_CHANNEL failed 0x%x\n", status));
+        OwbLog("OpenSignaling: BRB_L2CA_OPEN_CHANNEL fallo 0x%x", status);
     }
 
     DevExt->BthInterface.BthFreeBrb((PBRB)brb);
@@ -125,10 +137,15 @@ NTSTATUS L2capOpenSignalingChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 // L2CAP media channel open (after AVDTP OPEN)
 NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
 {
-    if (!DevExt->BthInterface.BthAllocateBrb)
+    if (!DevExt->BthInterface.BthAllocateBrb) {
+        OwbLog("OpenMedia: sin interfaz BthPort");
         return STATUS_DEVICE_NOT_READY;
-    if (DevExt->RemoteBtAddress == 0)
+    }
+    if (DevExt->RemoteBtAddress == 0) {
+        OwbLog("OpenMedia: sin BT addr remota");
         return STATUS_DEVICE_NOT_CONNECTED;
+    }
+    OwbLog("OpenMedia: abriendo PSM 0x%04x", AVDTP_MEDIA_PSM);
 
     struct _BRB_L2CA_OPEN_CHANNEL* brb =
         (struct _BRB_L2CA_OPEN_CHANNEL*)
@@ -150,10 +167,9 @@ NTSTATUS L2capOpenMediaChannel(_In_ POWB_DEVICE_EXTENSION DevExt)
     NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     if (NT_SUCCESS(status)) {
         DevExt->MediaChannelHandle = brb->ChannelHandle;
-        KdPrint(("OpenWinBlue: media channel opened, handle=0x%p\n",
-                 (PVOID)brb->ChannelHandle));
+        OwbLog("OpenMedia: canal abierto handle=0x%p", (PVOID)brb->ChannelHandle);
     } else {
-        KdPrint(("OpenWinBlue: media channel open failed 0x%x\n", status));
+        OwbLog("OpenMedia: BRB_L2CA_OPEN_CHANNEL fallo 0x%x", status);
     }
 
     DevExt->BthInterface.BthFreeBrb((PBRB)brb);
@@ -166,10 +182,14 @@ NTSTATUS L2capSendSignaling(
     _In_reads_bytes_(Length) const UCHAR* Data,
     _In_ USHORT Length)
 {
-    if (!DevExt->BthInterface.BthAllocateBrb)
+    if (!DevExt->BthInterface.BthAllocateBrb) {
+        OwbLog("SendSignaling: sin interfaz BthPort");
         return STATUS_DEVICE_NOT_READY;
-    if (DevExt->SignalingChannelHandle == 0)
+    }
+    if (DevExt->SignalingChannelHandle == 0) {
+        OwbLog("SendSignaling: canal de signaling cerrado");
         return STATUS_DEVICE_NOT_CONNECTED;
+    }
 
     struct _BRB_L2CA_ACL_TRANSFER* brb =
         (struct _BRB_L2CA_ACL_TRANSFER*)
@@ -185,8 +205,7 @@ NTSTATUS L2capSendSignaling(
 
     NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: L2capSendSignaling failed 0x%x len=%u\n",
-                 status, (ULONG)Length));
+        OwbLog("SendSignaling: fallo 0x%x len=%u", status, Length);
     }
     DevExt->BthInterface.BthFreeBrb((PBRB)brb);
     return status;
@@ -224,10 +243,21 @@ NTSTATUS L2capSendMediaFrame(
     _In_reads_bytes_(FrameLen) const UCHAR* FrameData,
     _In_ USHORT FrameLen)
 {
-    if (DevExt->Avdtp.State != AvdtpStateStreaming)
+    static ULONG mediaCount     = 0;
+    static ULONG notStreamCount = 0;
+
+    if (DevExt->Avdtp.State != AvdtpStateStreaming) {
+        notStreamCount++;
+        if ((notStreamCount % 1000u) == 1u) {
+            OwbLog("SendMedia: descartado #%lu - estado=%s (no Streaming)",
+                   notStreamCount, OwbAvdtpStateName(DevExt->Avdtp.State));
+        }
         return STATUS_DEVICE_NOT_CONNECTED;
-    if (!DevExt->BthInterface.BthAllocateBrb)
+    }
+    if (!DevExt->BthInterface.BthAllocateBrb) {
+        OwbLog("SendMedia: sin interfaz BthPort");
         return STATUS_DEVICE_NOT_READY;
+    }
 
     BOOLEAN use_rtp = TRUE, payload_hdr = TRUE;
     ULONG   ts_incr = 128u;
@@ -275,6 +305,15 @@ NTSTATUS L2capSendMediaFrame(
     NTSTATUS status = L2capSubmitBrb(DevExt, (PBRB)brb, sizeof(*brb));
     DevExt->BthInterface.BthFreeBrb((PBRB)brb);
     ExFreePoolWithTag(pkt, 'RTPM');
+
+    mediaCount++;
+    if (mediaCount == 1u) {
+        OwbLog("SendMedia: PRIMER paquete (codec=%lu pkt=%u rtp=%d status=0x%x)",
+               CodecId, pkt_len, use_rtp, status);
+    } else if (!NT_SUCCESS(status) || (mediaCount % 1000u) == 0u) {
+        OwbLog("SendMedia: #%lu codec=%lu pkt=%u status=0x%x",
+               mediaCount, CodecId, pkt_len, status);
+    }
     return status;
 }
 

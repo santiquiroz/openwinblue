@@ -4,6 +4,7 @@
 #include "avdtp.h"
 #include "l2cap_stream.h"
 #include "ioctl.h"
+#include "owb_trace.h"
 #include <wdmsec.h>   // SDDL_DEVOBJ_SYS_ALL_ADMIN_ALL
 
 // PASSIVE_LEVEL worker: reads pending AVDTP signaling data via BRB and processes it.
@@ -14,16 +15,24 @@ VOID OwbAvdtpWorkCallback(_In_ WDFWORKITEM WorkItem)
     WDFDEVICE device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
     POWB_DEVICE_EXTENSION ext = OwbGetDeviceExtension(device);
 
-    if (!ext->BthInterface.BthAllocateBrb || ext->PendingRecvLen == 0) return;
+    if (!ext->BthInterface.BthAllocateBrb || ext->PendingRecvLen == 0) {
+        OwbLog("AvdtpWork: nada que leer (iface=%d pending=%lu)",
+               ext->BthInterface.BthAllocateBrb != NULL, ext->PendingRecvLen);
+        return;
+    }
 
     const ULONG readLen = min(ext->PendingRecvLen, (ULONG)sizeof(ext->AvdtpWorkBuf));
+    OwbLog("AvdtpWork: leyendo %lu bytes del canal de signaling", readLen);
     ext->PendingRecvLen = 0;
 
     // Submit BRB_L2CA_ACL_TRANSFER IN to read the pending packet from BthPort.
     struct _BRB_L2CA_ACL_TRANSFER* brb =
         (struct _BRB_L2CA_ACL_TRANSFER*)
         ext->BthInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, 'OWBR');
-    if (!brb) return;
+    if (!brb) {
+        OwbLog("AvdtpWork: BthAllocateBrb fallo (sin memoria)");
+        return;
+    }
 
     brb->BtAddress     = ext->RemoteBtAddress;
     brb->ChannelHandle = ext->SignalingChannelHandle;
@@ -34,9 +43,12 @@ VOID OwbAvdtpWorkCallback(_In_ WDFWORKITEM WorkItem)
 
     NTSTATUS status = L2capSubmitBrb(ext, (PBRB)brb, sizeof(*brb));
     if (NT_SUCCESS(status) && brb->BufferSize > 0) {
+        OwbLog("AvdtpWork: recibidos %lu bytes, procesando AVDTP", brb->BufferSize);
         ext->AvdtpWorkLen = (USHORT)brb->BufferSize;
         AvdtpHandleSignalingPacket(ext, ext->AvdtpWorkBuf, ext->AvdtpWorkLen);
         ext->AvdtpWorkLen = 0;
+    } else {
+        OwbLog("AvdtpWork: BRB IN fallo 0x%x (size=%lu)", status, brb->BufferSize);
     }
 
     ext->BthInterface.BthFreeBrb((PBRB)brb);
@@ -55,12 +67,12 @@ DriverEntry(
     status = WdfDriverCreate(DriverObject, RegistryPath,
                              WDF_NO_OBJECT_ATTRIBUTES, &config, WDF_NO_HANDLE);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfDriverCreate failed 0x%x\n", status));
+        OwbLog("WdfDriverCreate fallo 0x%x", status);
         return status;
     }
 
-    KdPrint(("OpenWinBlue: driver loaded (v%d.%d)\n",
-             OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR));
+    OwbLog("driver cargado v%d.%d",
+           OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR);
     return STATUS_SUCCESS;
 }
 
@@ -76,19 +88,23 @@ OwbEvtDeviceAdd(
 
     UNREFERENCED_PARAMETER(Driver);
 
+    OwbLog("EvtDeviceAdd: inicio");
+
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, OWB_DEVICE_EXTENSION);
 
     // Restrict the control device to SYSTEM + Administrators. The user-mode
     // service runs as LocalSystem; normal user processes must not be able to
     // open \\.\OpenWinBlue and inject audio frames or codec-config IOCTLs.
-    DECLARE_CONST_UNICODE_STRING(sddl, SDDL_DEVOBJ_SYS_ALL_ADMIN_ALL);
+    // SDDL literal de SDDL_DEVOBJ_SYS_ALL_ADM_ALL (evita linkear wdmsec.lib).
+    DECLARE_CONST_UNICODE_STRING(sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
     (VOID)WdfDeviceInitAssignSDDLString(DeviceInit, &sddl);
 
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfDeviceCreate failed 0x%x\n", status));
+        OwbLog("WdfDeviceCreate fallo 0x%x", status);
         return status;
     }
+    OwbLog("EvtDeviceAdd: WDFDEVICE creado");
 
     ext = OwbGetDeviceExtension(device);
     RtlZeroMemory(ext, sizeof(*ext));
@@ -107,10 +123,10 @@ OwbEvtDeviceAdd(
                                     &resultLen);
     if (NT_SUCCESS(status) && resultLen >= sizeof(BTH_ADDR)) {
         ext->RemoteBtAddress = (BTH_ADDR)(rawAddr & 0x0000FFFFFFFFFFFFull);
-        KdPrint(("OpenWinBlue: remote BT addr %I64x\n", ext->RemoteBtAddress));
+        OwbLog("EvtDeviceAdd: BT addr remota %012I64x", ext->RemoteBtAddress);
     } else {
-        KdPrint(("OpenWinBlue: DevicePropertyAddress query failed 0x%x — continuing\n",
-                 status));
+        OwbLog("EvtDeviceAdd: DevicePropertyAddress fallo 0x%x (len=%lu) - continuo",
+               status, resultLen);
         status = STATUS_SUCCESS;
     }
 
@@ -123,23 +139,25 @@ OwbEvtDeviceAdd(
                                      BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI,
                                      NULL);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfFdoQueryForInterface failed 0x%x — continuing\n",
-                 status));
+        OwbLog("EvtDeviceAdd: QI BthPort DDI fallo 0x%x - continuo SIN interfaz BT", status);
         status = STATUS_SUCCESS;
+    } else {
+        OwbLog("EvtDeviceAdd: interfaz BthPort DDI adquirida");
     }
 
     // Create symbolic link \\.\OpenWinBlue for user-mode DeviceIoControl.
     DECLARE_CONST_UNICODE_STRING(symLink, L"\\DosDevices\\OpenWinBlue");
     status = WdfDeviceCreateSymbolicLink(device, &symLink);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: symbolic link failed 0x%x\n", status));
+        OwbLog("EvtDeviceAdd: symlink DosDevices fallo 0x%x", status);
         return status;
     }
+    OwbLog("EvtDeviceAdd: symlink \\\\.\\OpenWinBlue creado");
 
     // Register IOCTL dispatch queue.
     status = IoctlRegister(device);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: IoctlRegister failed 0x%x\n", status));
+        OwbLog("EvtDeviceAdd: IoctlRegister fallo 0x%x", status);
         return status;
     }
 
@@ -152,7 +170,7 @@ OwbEvtDeviceAdd(
     workAttribs.ParentObject = device;
     status = WdfWorkItemCreate(&workCfg, &workAttribs, &ext->AvdtpWorkItem);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfWorkItemCreate failed 0x%x\n", status));
+        OwbLog("EvtDeviceAdd: WdfWorkItemCreate fallo 0x%x", status);
         return status;
     }
 
@@ -163,19 +181,20 @@ OwbEvtDeviceAdd(
     reqAttribs.ParentObject = device;
     status = WdfRequestCreate(&reqAttribs, ext->BthIoTarget, &ext->BrbRequest);
     if (!NT_SUCCESS(status)) {
-        KdPrint(("OpenWinBlue: WdfRequestCreate (BrbRequest) failed 0x%x\n", status));
+        OwbLog("EvtDeviceAdd: WdfRequestCreate (BrbRequest) fallo 0x%x", status);
         return status;
     }
 
     // Begin AVDTP signaling channel open.
     status = L2capOpenSignalingChannel(ext);
+    OwbLog("EvtDeviceAdd: L2capOpenSignalingChannel -> 0x%x", status);
     if (status == STATUS_PENDING ||
         status == STATUS_NOT_SUPPORTED ||
         status == STATUS_DEVICE_NOT_READY) {
         status = STATUS_SUCCESS;  // expected until BthInterface is acquired
     }
 
-    KdPrint(("OpenWinBlue: device added (v%d.%d)\n",
-             OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR));
+    OwbLog("EvtDeviceAdd: dispositivo agregado v%d.%d (status final 0x%x)",
+           OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR, status);
     return status;
 }

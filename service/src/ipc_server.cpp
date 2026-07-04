@@ -10,6 +10,7 @@
 #include "codec_controller.h"
 #include "owb_ioctl.h"
 #include "../ai/ai_pipeline.h"
+#include "owb_log.h"
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -44,14 +45,19 @@ bool IpcServer::start() {
         4096, 4096,
         0, nullptr
     );
-    if (impl_->pipe == INVALID_HANDLE_VALUE) return false;
+    if (impl_->pipe == INVALID_HANDLE_VALUE) {
+        OWB_LOG_ERROR("CreateNamedPipeW failed: %lu", GetLastError());
+        return false;
+    }
 
     impl_->running = true;
+    OWB_LOG_INFO("IPC server started listening on \\\\.\\pipe\\openwinblue");
     return true;
 }
 
 void IpcServer::stop() {
     if (!impl_->running) return;
+    OWB_LOG_INFO("IPC server stopping");
     impl_->running = false;
     if (impl_->pipe != INVALID_HANDLE_VALUE) {
         CloseHandle(impl_->pipe);
@@ -68,6 +74,8 @@ bool IpcServer::serve_one() {
     if (!connected && GetLastError() != ERROR_PIPE_CONNECTED)
         return false;
 
+    OWB_LOG_DEBUG("IPC client connected");
+
     // Message loop for this client connection
     bool client_done = false;
     while (!client_done && impl_->running) {
@@ -79,6 +87,7 @@ bool IpcServer::serve_one() {
 
         switch (hdr.type) {
             case ipc::MsgType::Ping: {
+                OWB_LOG_INFO("IPC message: Ping");
                 ipc::MsgHeader pong{ ipc::MsgType::Pong, 0 };
                 DWORD written = 0;
                 if (!WriteFile(impl_->pipe, &pong, sizeof(pong), &written, nullptr)
@@ -89,6 +98,7 @@ bool IpcServer::serve_one() {
                 break;
             }
             case ipc::MsgType::GetStatus: {
+                OWB_LOG_INFO("IPC message: GetStatus");
                 // TODO(phase2c): wire real state from AudioCapture + HfpGuard
                 ipc::MsgHeader reply{ ipc::MsgType::StatusReply,
                                       sizeof(ipc::StatusPayload) };
@@ -118,6 +128,9 @@ bool IpcServer::serve_one() {
                 }
                 status.hfp_guard_on = 0u;  // reported by the GUI's Level-1 control
 
+                OWB_LOG_INFO("GetStatus reply: codec_name=%.32s, is_capturing=%u",
+                             status.codec_name, status.is_capturing);
+
                 DWORD written = 0;
                 BOOL hdr_ok = WriteFile(impl_->pipe, &reply, sizeof(reply), &written, nullptr);
                 if (hdr_ok && written == sizeof(reply)) {
@@ -129,20 +142,30 @@ bool IpcServer::serve_one() {
             case ipc::MsgType::SetCodec: {
                 // Read SetCodecPayload (codec_name + param_key + param_value)
                 if (hdr.payload_len < sizeof(ipc::SetCodecPayload)) {
+                    OWB_LOG_WARN("SetCodec payload too short");
                     client_done = true;
                     break;
                 }
                 ipc::SetCodecPayload codec_payload{};
                 DWORD payload_read = 0;
-                ReadFile(impl_->pipe, &codec_payload,
+                BOOL payload_ok = ReadFile(impl_->pipe, &codec_payload,
                          sizeof(codec_payload), &payload_read, nullptr);
+
+                if (!payload_ok || payload_read < sizeof(codec_payload)) {
+                    OWB_LOG_WARN("ReadFile SetCodec payload failed");
+                    client_done = true;
+                    break;
+                }
 
                 // "AI" codec name → route to AI pipeline, not the driver
                 if (std::strncmp(codec_payload.codec_name, "AI", 2) == 0) {
+                    const size_t klen = strnlen(codec_payload.param_key,
+                                               sizeof(codec_payload.param_key));
+                    OWB_LOG_INFO("IPC SetCodec: AI, param_key=%.32s, param_value=%lld",
+                                 codec_payload.param_key, (long long)codec_payload.param_value);
+                    
                     bool ai_success = false;
                     if (impl_->ai_) {
-                        const size_t klen = strnlen(codec_payload.param_key,
-                                                    sizeof(codec_payload.param_key));
                         impl_->ai_->set_param(
                             std::string_view(codec_payload.param_key, klen),
                             codec_payload.param_value);
@@ -164,6 +187,12 @@ bool IpcServer::serve_one() {
                 else if (std::strncmp(codec_payload.codec_name, "aptX-HD", 7) == 0) codec_id = OWB_CODEC_APTXHD;
                 else if (std::strncmp(codec_payload.codec_name, "aptX",    4) == 0) codec_id = OWB_CODEC_APTX;
 
+                const size_t key_len = strnlen(codec_payload.param_key,
+                                              sizeof(codec_payload.param_key));
+                OWB_LOG_INFO("IPC SetCodec: codec_name=%.32s, codec_id=%u, param_key=%.32s, param_value=%lld",
+                             codec_payload.codec_name, codec_id,
+                             codec_payload.param_key, (long long)codec_payload.param_value);
+
                 // Switch the user-mode encoder so the service actually produces
                 // frames in the requested codec (driver negotiation is separate).
                 if (impl_->controller_)
@@ -172,14 +201,14 @@ bool IpcServer::serve_one() {
                 // Forward to driver via A2dpStream
                 bool success = false;
                 if (impl_->stream_) {
-                    const size_t key_len = strnlen(codec_payload.param_key,
-                                                   sizeof(codec_payload.param_key));
                     success = impl_->stream_->set_codec_config(
                         codec_id,
                         std::string_view(codec_payload.param_key, key_len),
                         codec_payload.param_value);
                 }
                 if (impl_->controller_ && !impl_->stream_) success = true;
+
+                OWB_LOG_INFO("SetCodec result: success=%d, codec_id=%u", success ? 1 : 0, codec_id);
 
                 // Reply with CodecAck
                 ipc::MsgHeader ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };

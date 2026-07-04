@@ -12,6 +12,7 @@
 #include "codec_factory.h"
 #include "../ai/ai_pipeline.h"
 #include "owb_ioctl.h"
+#include "owb_log.h"
 
 #include <algorithm>
 #include <array>
@@ -70,6 +71,12 @@ struct StreamPipeline::Impl {
     void rebuild_codec(uint32_t id) {
         std::lock_guard<std::mutex> lock(codec_mtx);
         codec = CodecFactory::create(id);
+        if (!codec) {
+            OWB_LOG_ERROR("CodecFactory::create returned null for codec_id %u", id);
+        } else {
+            OWB_LOG_INFO("Codec created: id=%u, name=%.*s", id,
+                         static_cast<int>(codec->name().size()), codec->name().data());
+        }
         if (codec && source) {
             codec->set_param({"freq", source->sample_rate()});
         }
@@ -93,6 +100,12 @@ struct StreamPipeline::Impl {
                     sink->send_frame(id, std::span<const uint8_t>(
                         out.data(), static_cast<size_t>(n)));
                     streaming = true;
+                } else {
+                    static unsigned long encode_fail_count = 0;
+                    encode_fail_count++;
+                    if (encode_fail_count == 1 || encode_fail_count % 500 == 0) {
+                        OWB_LOG_WARN("codec->encode returned %lld (count: %lu)", n, encode_fail_count);
+                    }
                 }
                 accum.erase(accum.begin(),
                             accum.begin() + static_cast<std::ptrdiff_t>(frame));
@@ -117,22 +130,37 @@ struct StreamPipeline::Impl {
     }
 
     void run() {
+        OWB_LOG_INFO("StreamPipeline::Impl::run() starting");
         std::vector<int16_t> read_buf(kReadSamples);
         std::vector<int16_t> stereo;
         std::vector<uint8_t> out(kOutBytes);
+        
+        static bool first_frame_logged = false;
+        static unsigned long reopen_attempt = 0;
 
         while (running.load()) {
             if (!sink->is_open() && !sink->open()) {
                 streaming = false;
+                reopen_attempt++;
+                if (reopen_attempt == 1 || reopen_attempt % 200 == 0) {
+                    OWB_LOG_WARN("Sink failed to open (attempt %lu)", reopen_attempt);
+                }
                 std::this_thread::sleep_for(kReopenSleep);
                 continue;
             }
+            
+            reopen_attempt = 0;
 
             const std::ptrdiff_t frames = source->read(
                 std::span<int16_t>(read_buf.data(), read_buf.size()));
             if (frames <= 0) {
                 std::this_thread::sleep_for(kIdleSleep);
                 continue;
+            }
+            
+            if (!first_frame_logged) {
+                OWB_LOG_INFO("First audio frames received: %lld frames", (long long)frames);
+                first_frame_logged = true;
             }
 
             stereo.clear();
@@ -143,7 +171,10 @@ struct StreamPipeline::Impl {
             if (ai) ai->process(std::span<int16_t>(stereo.data(), stereo.size()));
 
             accum.insert(accum.end(), stereo.begin(), stereo.end());
-            if (accum.size() > kAccumHardCap) accum.clear();  // overflow guard
+            if (accum.size() > kAccumHardCap) {
+                OWB_LOG_WARN("Accumulator overflow, clearing buffer (size: %zu)", accum.size());
+                accum.clear();
+            }
 
             drain(out);
         }
@@ -160,7 +191,11 @@ StreamPipeline::~StreamPipeline() { stop(); }
 
 bool StreamPipeline::start() {
     if (impl_->running.load()) return true;
-    if (!impl_->source) return false;
+    if (!impl_->source) {
+        OWB_LOG_WARN("StreamPipeline::start() called but no audio source available");
+        return false;
+    }
+    OWB_LOG_INFO("StreamPipeline starting");
     impl_->running = true;
     impl_->thread  = std::thread([this] { impl_->run(); });
     return true;
@@ -168,6 +203,7 @@ bool StreamPipeline::start() {
 
 void StreamPipeline::stop() {
     if (!impl_->running.exchange(false)) return;
+    OWB_LOG_INFO("StreamPipeline stopping");
     if (impl_->thread.joinable()) impl_->thread.join();
     impl_->streaming = false;
 }

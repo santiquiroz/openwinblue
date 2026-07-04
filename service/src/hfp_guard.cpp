@@ -1,6 +1,7 @@
 // service/src/hfp_guard.cpp
 #include "hfp_guard.h"
 #include "com_ptr.h"
+#include "owb_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -72,33 +73,45 @@ bool HfpGuard::start() {
         __uuidof(IMMDeviceEnumerator),
         reinterpret_cast<void**>(&impl_->enumerator.p)
     );
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        OWB_LOG_ERROR("CoCreateInstance(MMDeviceEnumerator) failed: 0x%08lx", (unsigned long)hr);
+        return false;
+    }
 
     IMMDevice* device = nullptr;
     hr = impl_->enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
-    if (FAILED(hr) || !device) return false;
+    if (FAILED(hr) || !device) {
+        OWB_LOG_ERROR("GetDefaultAudioEndpoint failed: 0x%08lx", (unsigned long)hr);
+        return false;
+    }
 
     hr = device->Activate(
         __uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr,
         reinterpret_cast<void**>(&impl_->session_mgr.p)
     );
     device->Release();
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        OWB_LOG_ERROR("Activate(IAudioSessionManager2) failed: 0x%08lx", (unsigned long)hr);
+        return false;
+    }
 
     impl_->notifier = new SessionNotifier(impl_->enumerator.p);
     hr = impl_->session_mgr->RegisterSessionNotification(impl_->notifier);
     if (FAILED(hr)) {
+        OWB_LOG_ERROR("RegisterSessionNotification failed: 0x%08lx", (unsigned long)hr);
         impl_->notifier->Release();
         impl_->notifier = nullptr;
         return false;
     }
 
     impl_->active = true;
+    OWB_LOG_INFO("HFP guard activated");
     return true;
 }
 
 void HfpGuard::stop() {
     if (!impl_->active) return;
+    OWB_LOG_INFO("HFP guard stopping");
     if (impl_->session_mgr && impl_->notifier) {
         impl_->session_mgr->UnregisterSessionNotification(impl_->notifier);
         impl_->notifier->Release();
