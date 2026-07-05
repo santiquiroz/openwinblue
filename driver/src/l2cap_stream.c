@@ -27,6 +27,10 @@ NTSTATUS L2capSubmitBrb(
     _In_ PBRB                  Brb,
     _In_ ULONG                 BrbSize)
 {
+    // Serializar: BrbRequest es único y compartido; dos WdfRequestReuse
+    // concurrentes sobre un request en vuelo corrompen y crashean.
+    WdfWaitLockAcquire(DevExt->BrbLock, NULL);
+
     WDF_REQUEST_REUSE_PARAMS reuseParams;
     WDF_REQUEST_REUSE_PARAMS_INIT(&reuseParams,
                                    WDF_REQUEST_REUSE_NO_FLAGS,
@@ -34,13 +38,14 @@ NTSTATUS L2capSubmitBrb(
     NTSTATUS status = WdfRequestReuse(DevExt->BrbRequest, &reuseParams);
     if (!NT_SUCCESS(status)) {
         OwbLog("SubmitBrb: WdfRequestReuse fallo 0x%x", status);
+        WdfWaitLockRelease(DevExt->BrbLock);
         return status;
     }
 
     WDF_MEMORY_DESCRIPTOR memDesc;
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memDesc, Brb, BrbSize);
 
-    return WdfIoTargetSendInternalIoctlOthersSynchronously(
+    status = WdfIoTargetSendInternalIoctlOthersSynchronously(
         DevExt->BthIoTarget,
         DevExt->BrbRequest,
         IOCTL_INTERNAL_BTH_SUBMIT_BRB,
@@ -50,6 +55,9 @@ NTSTATUS L2capSubmitBrb(
         NULL,   // RequestOptions
         NULL    // BytesReturned
     );
+
+    WdfWaitLockRelease(DevExt->BrbLock);
+    return status;
 }
 
 // Signaling receive callback
@@ -77,8 +85,12 @@ VOID L2capSignalingIndicationCallback(
             break;
 
         case IndicationRemoteDisconnect:
-            // Remote side closed the channel.
+            // Remote side closed the channel. Limpiar AMBOS handles y el RTP:
+            // el timer de reconexión reabrirá y renegociará desde cero.
             devExt->SignalingChannelHandle = 0;
+            devExt->MediaChannelHandle     = 0;
+            devExt->RtpSeqNum              = 0;
+            devExt->RtpTimestamp           = 0;
             devExt->Avdtp.State = AvdtpStateIdle;
             OwbLog("L2CAP ind: canal de signaling DESCONECTADO por remoto");
             break;

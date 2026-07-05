@@ -77,6 +77,40 @@ VOID OwbAvdtpWorkCallback(_In_ WDFWORKITEM WorkItem)
     ext->BthInterface.BthFreeBrb((PBRB)brb);
 }
 
+// Período del timer de reconexión.
+#define OWB_RECONNECT_PERIOD_MS 3000u
+
+// TRUE si conviene (re)intentar abrir el canal de señalización: interfaz BT
+// lista, dirección conocida, sin canal abierto y AVDTP Idle.
+static BOOLEAN OwbShouldReconnect(_In_ POWB_DEVICE_EXTENSION ext)
+{
+    return ext->BthInterface.BthAllocateBrb != NULL &&
+           ext->RemoteBtAddress != 0 &&
+           ext->SignalingChannelHandle == 0 &&
+           ext->Avdtp.State == AvdtpStateIdle;
+}
+
+// DISPATCH_LEVEL: el callback del timer solo mira el estado y, si toca reconectar,
+// encola el work item (no se puede tocar L2CAP/BRBs a DISPATCH_LEVEL).
+VOID OwbReconnectTimer(_In_ WDFTIMER Timer)
+{
+    WDFDEVICE device = (WDFDEVICE)WdfTimerGetParentObject(Timer);
+    POWB_DEVICE_EXTENSION ext = OwbGetDeviceExtension(device);
+    if (OwbShouldReconnect(ext))
+        WdfWorkItemEnqueue(ext->ReconnectWorkItem);
+}
+
+// PASSIVE_LEVEL: reintenta abrir el canal de señalización (usa BRBs).
+VOID OwbReconnectWorkCallback(_In_ WDFWORKITEM WorkItem)
+{
+    WDFDEVICE device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
+    POWB_DEVICE_EXTENSION ext = OwbGetDeviceExtension(device);
+    if (!OwbShouldReconnect(ext)) return;   // pudo cambiar entre encolar y correr
+
+    OwbLog("Reconnect: AVDTP Idle -> reintentando abrir signaling");
+    (VOID)L2capOpenSignalingChannel(ext);
+}
+
 NTSTATUS
 DriverEntry(
     _In_ PDRIVER_OBJECT  DriverObject,
@@ -206,14 +240,51 @@ OwbEvtDeviceAdd(
         return status;
     }
 
+    // Lock que serializa el uso del BrbRequest compartido (ver L2capSubmitBrb).
+    WDF_OBJECT_ATTRIBUTES lockAttribs;
+    WDF_OBJECT_ATTRIBUTES_INIT(&lockAttribs);
+    lockAttribs.ParentObject = device;
+    status = WdfWaitLockCreate(&lockAttribs, &ext->BrbLock);
+    if (!NT_SUCCESS(status)) {
+        OwbLog("EvtDeviceAdd: WdfWaitLockCreate fallo 0x%x", status);
+        return status;
+    }
+
+    // Work item de reconexión (PASSIVE) que abre el canal de señalización.
+    WDF_WORKITEM_CONFIG reconnCfg;
+    WDF_WORKITEM_CONFIG_INIT(&reconnCfg, OwbReconnectWorkCallback);
+    WDF_OBJECT_ATTRIBUTES reconnAttribs;
+    WDF_OBJECT_ATTRIBUTES_INIT(&reconnAttribs);
+    reconnAttribs.ParentObject = device;
+    status = WdfWorkItemCreate(&reconnCfg, &reconnAttribs, &ext->ReconnectWorkItem);
+    if (!NT_SUCCESS(status)) {
+        OwbLog("EvtDeviceAdd: WdfWorkItemCreate (reconnect) fallo 0x%x", status);
+        return status;
+    }
+
+    // Timer periódico (DISPATCH) que dispara el work item de reconexión mientras
+    // el AVDTP esté Idle. Maneja link no listo al arranque y reconexión.
+    WDF_TIMER_CONFIG timerCfg;
+    WDF_TIMER_CONFIG_INIT_PERIODIC(&timerCfg, OwbReconnectTimer, OWB_RECONNECT_PERIOD_MS);
+    WDF_OBJECT_ATTRIBUTES timerAttribs;
+    WDF_OBJECT_ATTRIBUTES_INIT(&timerAttribs);
+    timerAttribs.ParentObject = device;
+    status = WdfTimerCreate(&timerCfg, &timerAttribs, &ext->ReconnectTimer);
+    if (!NT_SUCCESS(status)) {
+        OwbLog("EvtDeviceAdd: WdfTimerCreate fallo 0x%x", status);
+        return status;
+    }
+
     // Abrir el canal de señalización AVDTP es BEST-EFFORT: es una tarea de
     // runtime, no un requisito para crear el device. Su fallo (link BT no listo,
     // RemoteBtAddress==0, BthInterface aún no adquirida, etc.) NO debe hacer
     // fallar EvtDeviceAdd — si no, WDF destruye el device y desaparece el
     // control interface \\.\OpenWinBlue, y el servicio nunca puede conectar ni
-    // disparar la negociación. La conexión se reintenta en runtime.
+    // disparar la negociación. La conexión se reintenta vía ReconnectTimer.
     NTSTATUS l2capStatus = L2capOpenSignalingChannel(ext);
     OwbLog("EvtDeviceAdd: L2capOpenSignalingChannel -> 0x%x (best-effort)", l2capStatus);
+
+    WdfTimerStart(ext->ReconnectTimer, WDF_REL_TIMEOUT_IN_MS(OWB_RECONNECT_PERIOD_MS));
 
     OwbLog("EvtDeviceAdd: dispositivo agregado v%d.%d OK",
            OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR);
