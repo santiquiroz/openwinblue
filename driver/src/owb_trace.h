@@ -7,8 +7,11 @@
 #pragma once
 #include <ntddk.h>
 
+// DPFLTR_DEFAULT_ID + DPFLTR_ERROR_LEVEL es visible en DebugView por defecto,
+// sin tocar el registro ni reiniciar (el componente IHVDRIVER exige que el
+// filtro se cargue en el boot). Prefijo "OWB:" para filtrar.
 #define OwbLog(fmt, ...) \
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, \
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, \
                "OWB: " fmt "\n", ##__VA_ARGS__)
 
 // Nombre legible del estado AVDTP para las trazas.
