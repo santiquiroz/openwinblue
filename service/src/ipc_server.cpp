@@ -11,6 +11,7 @@
 #include "owb_ioctl.h"
 #include "../ai/ai_pipeline.h"
 #include "owb_log.h"
+#include <atomic>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -19,7 +20,7 @@ namespace owb {
 
 struct IpcServer::Impl {
     HANDLE               pipe        = INVALID_HANDLE_VALUE;
-    bool                 running     = false;
+    std::atomic<bool>    running{false};   // leído por el hilo serve, escrito por stop()
     A2dpStream*          stream_     = nullptr;
     owb::ai::AiPipeline* ai_         = nullptr;
     ICodecController*    controller_ = nullptr;
@@ -32,7 +33,14 @@ IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai, ICodecController* c
     impl_->controller_ = controller;
 }
 
-IpcServer::~IpcServer() { stop(); }
+IpcServer::~IpcServer() {
+    stop();
+    // El hilo serve ya salió (run_service hace join() antes de destruir): cerrar aquí.
+    if (impl_->pipe != INVALID_HANDLE_VALUE) {
+        CloseHandle(impl_->pipe);
+        impl_->pipe = INVALID_HANDLE_VALUE;
+    }
+}
 
 bool IpcServer::start() {
     if (impl_->running) return true;
@@ -56,13 +64,17 @@ bool IpcServer::start() {
 }
 
 void IpcServer::stop() {
-    if (!impl_->running) return;
+    if (!impl_->running.exchange(false)) return;   // idempotente
     OWB_LOG_INFO("IPC server stopping");
-    impl_->running = false;
-    if (impl_->pipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(impl_->pipe);
-        impl_->pipe = INVALID_HANDLE_VALUE;
-    }
+    // Cerrar el handle del pipe desde otro hilo NO despierta de forma fiable un
+    // ConnectNamedPipe síncrono → el hilo serve queda colgado y join() nunca
+    // retorna (el servicio nunca reporta STOPPED y el instalador cuelga en
+    // "Deleting services"). Se conecta un cliente descartable para despertarlo;
+    // el hilo ve running==false y sale. El pipe se cierra en el destructor,
+    // tras el join().
+    HANDLE waker = CreateFileW(ipc::kPipeName, GENERIC_READ | GENERIC_WRITE,
+                               0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (waker != INVALID_HANDLE_VALUE) CloseHandle(waker);
 }
 
 bool IpcServer::serve_one() {
@@ -71,6 +83,10 @@ bool IpcServer::serve_one() {
 
     // Block until a client connects
     BOOL connected = ConnectNamedPipe(impl_->pipe, nullptr);
+    if (!impl_->running) {                 // despertado por el waker de stop()
+        DisconnectNamedPipe(impl_->pipe);
+        return false;
+    }
     if (!connected && GetLastError() != ERROR_PIPE_CONNECTED)
         return false;
 
