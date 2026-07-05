@@ -75,14 +75,22 @@ static VOID HandleDiscoverResponse(
         return;
     }
     OwbLog("DISCOVER rsp: %u bytes (%u SEPs)", Len, (USHORT)(Len / 2u));
+    // Cada SEP son 2 octetos (AVDTP spec §8.6.2):
+    //   Octeto 0: SEID (bits 7-2) | In-Use (bit 1) | RFA (bit 0)
+    //   Octeto 1: Media-Type (bits 7-4) | TSEP (bit 3, 0=SRC/1=SNK) | RFA (2-0)
     for (USHORT i = 0u; i + 1u < Len; i += 2u) {
-        UCHAR tsep = (Data[i] >> 1u) & 0x01u;  // bit 1 = TSEP per AVDTP spec §8.6.2
-        if (tsep == 0x01u) {   // 1 = SNK (audio sink), 0 = SRC
-            DevExt->Avdtp.RemoteSeid = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
+        UCHAR seid      = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
+        UCHAR inUse     = (Data[i] >> 1u) & 0x01u;
+        UCHAR mediaType = (UCHAR)((Data[i + 1u] >> 4u) & 0x0Fu);
+        UCHAR tsep      = (Data[i + 1u] >> 3u) & 0x01u;   // 0=SRC, 1=SNK
+        OwbLog("DISCOVER rsp: SEP seid=0x%02x inUse=%u media=%u tsep=%u",
+               seid, inUse, mediaType, tsep);
+        // Buscamos un audio sink (media=0 Audio, tsep=1 SNK) libre.
+        if (mediaType == 0x00u && tsep == 0x01u) {
+            DevExt->Avdtp.RemoteSeid = seid;
             DevExt->Avdtp.State = AvdtpStateConfiguring;
-            OwbLog("DISCOVER rsp: sink SEID=0x%02x -> GET_CAPABILITIES",
-                   DevExt->Avdtp.RemoteSeid);
-            UCHAR payload = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
+            OwbLog("DISCOVER rsp: audio sink SEID=0x%02x -> GET_CAPABILITIES", seid);
+            UCHAR payload = (UCHAR)((seid << 2u) & 0xFCu);
             AvdtpSendCommand(DevExt, AVDTP_MSG_GET_CAPABILITIES, &payload, 1u);
             return;
         }
