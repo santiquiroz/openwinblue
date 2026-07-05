@@ -48,7 +48,11 @@ NTSTATUS AvdtpSendCommand(
 }
 
 NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt) {
-    if (DevExt->Avdtp.State != AvdtpStateIdle) {
+    // Se invoca desde dos sitios: tras abrir el canal de señalización
+    // (State=Connecting) y desde AvdtpSetPreferredCodec (State=Idle). Ambos son
+    // válidos para arrancar DISCOVER; cualquier otro estado sí es inválido.
+    if (DevExt->Avdtp.State != AvdtpStateIdle &&
+        DevExt->Avdtp.State != AvdtpStateConnecting) {
         OwbLog("AvdtpConnect: rechazado, estado=%s",
                OwbAvdtpStateName(DevExt->Avdtp.State));
         return STATUS_INVALID_DEVICE_STATE;

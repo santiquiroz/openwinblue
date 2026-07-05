@@ -5,7 +5,30 @@
 #include "l2cap_stream.h"
 #include "ioctl.h"
 #include "owb_trace.h"
-#include <wdmsec.h>   // SDDL_DEVOBJ_SYS_ALL_ADMIN_ALL
+
+// DEVPKEY_Bluetooth_DeviceAddress {2BD67D8B-8BEB-48D5-87E0-6CDA3428040A}, 1
+// La BT address remota expuesta por el stack BT como string hex de 12 chars
+// (p.ej. "88C9E86B1EBF"). DevicePropertyAddress (legacy) viene vacía en los
+// nodos BTHENUM de este equipo, así que se usa esta.
+DEFINE_DEVPROPKEY(OWB_DEVPKEY_Bluetooth_DeviceAddress,
+                  0x2BD67D8B, 0x8BEB, 0x48D5, 0x87, 0xE0, 0x6C, 0xDA,
+                  0x34, 0x28, 0x04, 0x0A, 1);
+
+// Convierte un string hex ("88C9E86B1EBF") a BTH_ADDR (48 bits bajos).
+static BTH_ADDR OwbParseBtAddrHex(_In_ PCWSTR Str)
+{
+    BTH_ADDR addr = 0;
+    for (PCWSTR p = Str; *p != L'\0'; ++p) {
+        WCHAR c = *p;
+        BTH_ADDR nibble;
+        if      (c >= L'0' && c <= L'9') nibble = (BTH_ADDR)(c - L'0');
+        else if (c >= L'a' && c <= L'f') nibble = (BTH_ADDR)(10 + (c - L'a'));
+        else if (c >= L'A' && c <= L'F') nibble = (BTH_ADDR)(10 + (c - L'A'));
+        else continue;
+        addr = (addr << 4) | nibble;
+    }
+    return addr & 0x0000FFFFFFFFFFFFull;
+}
 
 // PASSIVE_LEVEL worker: reads pending AVDTP signaling data via BRB and processes it.
 // Enqueued by L2capSignalingIndicationCallback at DISPATCH_LEVEL when
@@ -92,13 +115,11 @@ OwbEvtDeviceAdd(
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, OWB_DEVICE_EXTENSION);
 
-    // Restrict the control device to SYSTEM + Administrators. The user-mode
-    // service runs as LocalSystem; normal user processes must not be able to
-    // open \\.\OpenWinBlue and inject audio frames or codec-config IOCTLs.
-    // SDDL literal de SDDL_DEVOBJ_SYS_ALL_ADM_ALL (evita linkear wdmsec.lib).
-    DECLARE_CONST_UNICODE_STRING(sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
-    (VOID)WdfDeviceInitAssignSDDLString(DeviceInit, &sddl);
-
+    // Seguridad del device: la deja PnP por defecto (SYSTEM full; el servicio
+    // corre como LocalSystem y abre \\.\OpenWinBlue sin problema). NO se usa
+    // WdfDeviceInitAssignSDDLString aquí: es para control devices, y en un PnP
+    // FDO hacía fallar WdfDeviceCreate con STATUS_INVALID_SECURITY_DESCR
+    // (0xC0000079). El endurecimiento SYS+Admin se hará por el INF [DDInstall.HW].
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {
         OwbLog("WdfDeviceCreate fallo 0x%x", status);
@@ -112,23 +133,23 @@ OwbEvtDeviceAdd(
     ext->BthIoTarget = WdfDeviceGetIoTarget(device);
     AvdtpContextInit(&ext->Avdtp);
 
-    // Read the remote Bluetooth address from PnP.
-    // DevicePropertyAddress encodes the BT address in the lower 48 bits.
-    ULONG_PTR rawAddr  = 0;
-    ULONG     resultLen = 0;
-    status = WdfDeviceQueryProperty(device,
-                                    DevicePropertyAddress,
-                                    sizeof(rawAddr),
-                                    &rawAddr,
-                                    &resultLen);
-    if (NT_SUCCESS(status) && resultLen >= sizeof(BTH_ADDR)) {
-        ext->RemoteBtAddress = (BTH_ADDR)(rawAddr & 0x0000FFFFFFFFFFFFull);
+    // BT address remota vía DEVPKEY_Bluetooth_DeviceAddress (string hex).
+    WDF_DEVICE_PROPERTY_DATA propData;
+    WDF_DEVICE_PROPERTY_DATA_INIT(&propData, &OWB_DEVPKEY_Bluetooth_DeviceAddress);
+
+    WCHAR       addrBuf[32] = { 0 };
+    ULONG       reqLen   = 0;
+    DEVPROPTYPE propType = 0;
+    status = WdfDeviceQueryPropertyEx(device, &propData,
+                                      sizeof(addrBuf), addrBuf, &reqLen, &propType);
+    if (NT_SUCCESS(status) && propType == DEVPROP_TYPE_STRING) {
+        ext->RemoteBtAddress = OwbParseBtAddrHex(addrBuf);
         OwbLog("EvtDeviceAdd: BT addr remota %012I64x", ext->RemoteBtAddress);
     } else {
-        OwbLog("EvtDeviceAdd: DevicePropertyAddress fallo 0x%x (len=%lu) - continuo",
-               status, resultLen);
-        status = STATUS_SUCCESS;
+        OwbLog("EvtDeviceAdd: query BT addr fallo 0x%x type=%lu - continuo",
+               status, propType);
     }
+    status = STATUS_SUCCESS;
 
     // Acquire BthPort profile driver interface.
     // Version 0x0200 (BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI) per bthddi.h.
@@ -185,16 +206,16 @@ OwbEvtDeviceAdd(
         return status;
     }
 
-    // Begin AVDTP signaling channel open.
-    status = L2capOpenSignalingChannel(ext);
-    OwbLog("EvtDeviceAdd: L2capOpenSignalingChannel -> 0x%x", status);
-    if (status == STATUS_PENDING ||
-        status == STATUS_NOT_SUPPORTED ||
-        status == STATUS_DEVICE_NOT_READY) {
-        status = STATUS_SUCCESS;  // expected until BthInterface is acquired
-    }
+    // Abrir el canal de señalización AVDTP es BEST-EFFORT: es una tarea de
+    // runtime, no un requisito para crear el device. Su fallo (link BT no listo,
+    // RemoteBtAddress==0, BthInterface aún no adquirida, etc.) NO debe hacer
+    // fallar EvtDeviceAdd — si no, WDF destruye el device y desaparece el
+    // control interface \\.\OpenWinBlue, y el servicio nunca puede conectar ni
+    // disparar la negociación. La conexión se reintenta en runtime.
+    NTSTATUS l2capStatus = L2capOpenSignalingChannel(ext);
+    OwbLog("EvtDeviceAdd: L2capOpenSignalingChannel -> 0x%x (best-effort)", l2capStatus);
 
-    OwbLog("EvtDeviceAdd: dispositivo agregado v%d.%d (status final 0x%x)",
-           OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR, status);
-    return status;
+    OwbLog("EvtDeviceAdd: dispositivo agregado v%d.%d OK",
+           OWB_DRIVER_VERSION_MAJOR, OWB_DRIVER_VERSION_MINOR);
+    return STATUS_SUCCESS;
 }
