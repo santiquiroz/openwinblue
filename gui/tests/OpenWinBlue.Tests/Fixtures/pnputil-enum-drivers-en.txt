@@ -1,0 +1,26 @@
+Microsoft PnP Utility
+
+Published Name:     oem3.inf
+Original Name:      prnms009.inf
+Provider Name:      Microsoft
+Class Name:         Printers
+Class GUID:         {4d36e979-e325-11ce-bfc1-08002be10318}
+Driver Version:     06/21/2006 10.0.26100.1
+Signer Name:        Microsoft Windows
+
+Published Name:     oem42.inf
+Original Name:      owb_a2dp.inf
+Provider Name:      OpenWinBlue
+Class Name:         Bluetooth
+Class GUID:         {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+Driver Version:     07/03/2026 0.3.3.0
+Signer Name:        OpenWinBlue Test
+
+Published Name:     oem57.inf
+Original Name:      rtkfilter.inf
+Provider Name:      Realtek Semiconductor Corp.
+Class Name:         Bluetooth
+Class GUID:         {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+Driver Version:     11/14/2024 1.10.1053.3003
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
+

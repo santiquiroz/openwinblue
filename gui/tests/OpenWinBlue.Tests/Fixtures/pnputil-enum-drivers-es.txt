@@ -1,0 +1,18 @@
+Utilidad PnP de Microsoft
+
+Nombre publicado:          oem3.inf
+Nombre original:           prnms009.inf
+Nombre del proveedor:      Microsoft
+Nombre de clase:           Impresoras
+GUID de clase:             {4d36e979-e325-11ce-bfc1-08002be10318}
+Versión del controlador:   06/21/2006 10.0.26100.1
+Nombre del firmante:       Microsoft Windows
+
+Nombre publicado:          oem108.inf
+Nombre original:           owb_a2dp.inf
+Nombre del proveedor:      OpenWinBlue
+Nombre de clase:           Bluetooth
+GUID de clase:             {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+Versión del controlador:   07/03/2026 0.3.3.0
+Nombre del firmante:       OpenWinBlue Test
+

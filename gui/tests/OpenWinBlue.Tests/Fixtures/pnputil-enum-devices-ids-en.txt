@@ -1,0 +1,43 @@
+Microsoft PnP Utility
+
+Instance ID:                BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&0001054c_PID&0d58\7&2c7f1e0a&0&AC800A1B2C3D_C00000000
+Device Description:         WH-1000XM4 Stereo
+Class Name:                 MEDIA
+Class GUID:                 {4d36e96c-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          OpenWinBlue
+Status:                     Started
+Driver Name:                oem42.inf
+Hardware IDs:               BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&0001054c_PID&0d58
+                            BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_LOCALMFG&005d
+Compatible IDs:             BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}
+
+Instance ID:                BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&000204e8_PID&a013\7&2c7f1e0a&0&F0B3EC112233_C00000000
+Device Description:         Galaxy Buds2 Stereo
+Class Name:                 MEDIA
+Class GUID:                 {4d36e96c-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Microsoft
+Status:                     Started
+Driver Name:                bthavctpsnk.inf
+Hardware IDs:               BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&000204e8_PID&a013
+Compatible IDs:             BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}
+
+Instance ID:                BTHENUM\{0000110e-0000-1000-8000-00805f9b34fb}_VID&0001054c_PID&0d58\7&2c7f1e0a&0&AC800A1B2C3D_C00000000
+Device Description:         Bluetooth AVRCP Device
+Class Name:                 System
+Class GUID:                 {4d36e97d-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Microsoft
+Status:                     Started
+Driver Name:                oem42.inf
+Hardware IDs:               BTHENUM\{0000110e-0000-1000-8000-00805f9b34fb}_VID&0001054c_PID&0d58
+Compatible IDs:             BTHENUM\{0000110e-0000-1000-8000-00805f9b34fb}
+
+Instance ID:                BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&00010075_PID&0100\7&2c7f1e0a&0&001122334455_C00000000
+Device Description:         Unknown sink
+Class Name:                 MEDIA
+Class GUID:                 {4d36e96c-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Microsoft
+Status:                     Problem
+Problem Code:               28 (0x1C) [CM_PROB_FAILED_INSTALL]
+Hardware IDs:               BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}_VID&00010075_PID&0100
+Compatible IDs:             BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}
+
