@@ -273,9 +273,15 @@ public partial class DevicesViewModel : ObservableObject
             return;
         }
         OWBLogger.Info($"ApplyCodec: device='{SelectedDevice.Name}' codec={SelectedCodec} bitrate={SelectedBitrate}kbps");
-        _ipc.SendSetCodec(SelectedCodec, "switch", (long)SelectedBitrate * 1000);
-        StatusMessage = $"{SelectedCodec} a {SelectedBitrate} kbps aplicado a {SelectedDevice.Name}.";
+        bool acked = _ipc.SendSetCodec(SelectedCodec, "switch", (long)SelectedBitrate * 1000);
+        StatusMessage = DescribeApplyResult(acked, SelectedCodec, SelectedBitrate, SelectedDevice.Name);
     }
+
+    public static string DescribeApplyResult(bool acked, string codec, int bitrateKbps, string device) =>
+        acked
+            ? $"{codec} a {bitrateKbps} kbps aplicado a {device}."
+            : $"El servicio rechazó {codec} para {device}. Revisa el registro de owb-service.";
+
     private bool CanApply() => SelectedDevice?.IsAudio == true && OwbDriverInstalled;
 
     [RelayCommand(CanExecute = nameof(CanInstall))]
