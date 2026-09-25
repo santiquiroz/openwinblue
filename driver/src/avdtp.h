@@ -49,6 +49,7 @@ typedef struct _OWB_AVDTP_CONTEXT {
     UCHAR             LocalSeid;       // our SEID (fixed: 0x01)
     UCHAR             TransactionId;   // rolling 0-15 counter
     ULONG             ActiveCodecId;   // OWB_CODEC_* of negotiated codec
+    ULONG             PendingCodecId;  // OWB_CODEC_* sent in SET_CONFIGURATION, awaiting accept
 } OWB_AVDTP_CONTEXT, *POWB_AVDTP_CONTEXT;
 
 // Forward declaration — full definition in owb_a2dp.h

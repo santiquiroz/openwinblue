@@ -1,6 +1,7 @@
 // driver/src/avdtp.c
 // AVDTP signaling state machine.
 #include "avdtp.h"
+#include "avdtp_packets.h"
 #include "owb_a2dp.h"
 #include "l2cap_stream.h"
 #include "../owb_ioctl.h"
@@ -10,6 +11,7 @@ VOID AvdtpContextInit(_Out_ POWB_AVDTP_CONTEXT Ctx) {
     Ctx->State         = AvdtpStateIdle;
     Ctx->LocalSeid     = 0x01;
     Ctx->ActiveCodecId = OWB_CODEC_SBC;
+    Ctx->PendingCodecId = OWB_CODEC_SBC;
 }
 
 // Build and send a single-packet AVDTP command.
@@ -49,210 +51,50 @@ NTSTATUS AvdtpConnect(_In_ POWB_DEVICE_EXTENSION DevExt) {
     return st;
 }
 
-// Handle DISCOVER response: find first audio sink SEID, send GET_CAPABILITIES.
+// Handle DISCOVER response: find first free audio sink SEID, send GET_CAPABILITIES.
 static VOID HandleDiscoverResponse(
     _In_ POWB_DEVICE_EXTENSION DevExt,
     _In_reads_bytes_opt_(Len) const UCHAR* Data,
     _In_ USHORT Len)
 {
-    if (!Data || Len == 0u) return;
-    for (USHORT i = 0u; i + 1u < Len; i += 2u) {
-        UCHAR tsep = (Data[i] >> 1u) & 0x01u;  // bit 1 = TSEP per AVDTP spec §8.6.2
-        if (tsep == 0x01u) {   // 1 = SNK (audio sink), 0 = SRC
-            DevExt->Avdtp.RemoteSeid = (UCHAR)((Data[i] >> 2u) & 0x3Fu);
-            DevExt->Avdtp.State = AvdtpStateConfiguring;
-            UCHAR payload = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
-            AvdtpSendCommand(DevExt, AVDTP_MSG_GET_CAPABILITIES, &payload, 1u);
-            return;
-        }
+    const UCHAR seid = owb_avdtp_find_free_audio_sink_seid(Data, Len);
+    if (seid == OWB_AVDTP_SEID_NONE) {
+        KdPrint(("OpenWinBlue: AVDTP DISCOVER found no free audio sink SEID\n"));
+        return;
     }
-    KdPrint(("OpenWinBlue: AVDTP DISCOVER found no audio sink SEID\n"));
+    DevExt->Avdtp.RemoteSeid = seid;
+    DevExt->Avdtp.State = AvdtpStateConfiguring;
+    UCHAR payload = (UCHAR)((seid << 2u) & 0xFCu);
+    AvdtpSendCommand(DevExt, AVDTP_MSG_GET_CAPABILITIES, &payload, 1u);
 }
 
-// Build SBC SET_CONFIGURATION payload (A2DP spec Table 4.25).
-// 44.1kHz | Joint Stereo | 16 blocks | 8 subbands | Loudness | bitpool 2-53.
-static USHORT BuildSbcSetConfig(
-    _Out_writes_bytes_(MaxLen) PUCHAR Buf,
-    _In_ UCHAR AcpSeid,
-    _In_ UCHAR IntSeid,
-    _In_ USHORT MaxLen)
-{
-    if (MaxLen < 10u) return 0u;
-    Buf[0] = (UCHAR)((AcpSeid << 2u) & 0xFCu);  // ACP_SEID
-    Buf[1] = (UCHAR)((IntSeid << 2u) & 0xFCu);  // INT_SEID
-    Buf[2] = 0x07u;  // Service Category: Media Codec
-    Buf[3] = 0x06u;  // LOSC = 6
-    Buf[4] = 0x00u;  // Media Type: Audio
-    Buf[5] = 0x00u;  // Codec Type: SBC
-    Buf[6] = 0x21u;  // 44.1kHz | Joint Stereo
-    Buf[7] = 0x15u;  // Blocks=16 | Subbands=8 | Loudness
-    Buf[8] = 0x02u;  // min bitpool
-    Buf[9] = 0x35u;  // max bitpool = 53
-    return 10u;
-}
-
-// Build LDAC SET_CONFIGURATION payload (Sony LDAC, vendor codec type 0xFF).
-// Total: 12 bytes. Buf must be at least 12 bytes.
-static USHORT BuildLdacSetConfig(
-    _Out_writes_bytes_(MaxLen) PUCHAR Buf,
-    _In_ UCHAR AcpSeid, _In_ UCHAR IntSeid, _In_ USHORT MaxLen)
-{
-    if (MaxLen < 12u) return 0u;
-    Buf[0]  = (UCHAR)((AcpSeid << 2u) & 0xFCu);  // ACP_SEID
-    Buf[1]  = (UCHAR)((IntSeid << 2u) & 0xFCu);  // INT_SEID
-    Buf[2]  = 0x07u;   // Service Category: Media Codec
-    Buf[3]  = 0x08u;   // LOSC = 8
-    Buf[4]  = 0x00u;   // Media Type: Audio
-    Buf[5]  = 0xFFu;   // Codec Type: Vendor Specific
-    // Sony vendor ID: 0x0000012D (little-endian)
-    Buf[6]  = 0x2Du; Buf[7]  = 0x01u; Buf[8]  = 0x00u; Buf[9]  = 0x00u;
-    // LDAC Codec ID: 0x00AA (little-endian)
-    Buf[10] = 0xAAu; Buf[11] = 0x00u;
-    return 12u;
-}
-
-// Build aptX Classic (isHD=FALSE) or aptX HD (isHD=TRUE) SET_CONFIGURATION payload.
-// Classic: 13 bytes total. HD: 14 bytes total.
-static USHORT BuildAptxSetConfig(
-    _Out_writes_bytes_(MaxLen) PUCHAR Buf,
-    _In_ UCHAR AcpSeid, _In_ UCHAR IntSeid, _In_ USHORT MaxLen, _In_ BOOLEAN isHD)
-{
-    const USHORT needed = isHD ? 14u : 13u;
-    if (MaxLen < needed) return 0u;
-    Buf[0] = (UCHAR)((AcpSeid << 2u) & 0xFCu);
-    Buf[1] = (UCHAR)((IntSeid << 2u) & 0xFCu);
-    Buf[2] = 0x07u;                           // Service Category: Media Codec
-    Buf[3] = (UCHAR)(5u + (isHD ? 2u : 1u)); // LOSC
-    Buf[4] = 0x00u;                           // Media Type: Audio
-    Buf[5] = 0xFFu;                           // Codec Type: Vendor Specific
-    if (!isHD) {
-        // Qualcomm aptX: 0x0000004F
-        Buf[6] = 0x4Fu; Buf[7] = 0x00u; Buf[8] = 0x00u; Buf[9] = 0x00u;
-        Buf[10] = 0x01u; Buf[11] = 0x00u;  // Codec ID: 0x0001
-        Buf[12] = 0x22u;  // 44.1kHz(0x20) | Stereo(0x02)
-        return 13u;
-    } else {
-        // Qualcomm aptX HD: 0x000000D7
-        Buf[6] = 0xD7u; Buf[7] = 0x00u; Buf[8] = 0x00u; Buf[9] = 0x00u;
-        Buf[10] = 0x24u; Buf[11] = 0x00u;  // Codec ID: 0x0024
-        Buf[12] = 0x22u;  // 44.1kHz | Stereo
-        Buf[13] = 0x00u;  // reserved
-        return 14u;
-    }
-}
-
-// Build AAC SET_CONFIGURATION payload (A2DP AAC spec, codec type 0x02).
-// MPEG-2 AAC LC | 44.1kHz | Stereo | 256 kbps CBR. Total: 12 bytes.
-static USHORT BuildAacSetConfig(
-    _Out_writes_bytes_(MaxLen) PUCHAR Buf,
-    _In_ UCHAR AcpSeid, _In_ UCHAR IntSeid, _In_ USHORT MaxLen)
-{
-    if (MaxLen < 12u) return 0u;
-    Buf[0]  = (UCHAR)((AcpSeid << 2u) & 0xFCu);  // ACP_SEID
-    Buf[1]  = (UCHAR)((IntSeid << 2u) & 0xFCu);  // INT_SEID
-    Buf[2]  = 0x07u;   // Service Category: Media Codec
-    Buf[3]  = 0x08u;   // LOSC = media type + codec type + 6 info bytes
-    Buf[4]  = 0x00u;   // Media Type: Audio
-    Buf[5]  = 0x02u;   // Codec Type: MPEG-2,4 AAC
-    Buf[6]  = 0x80u;   // Object Type: MPEG-2 AAC LC
-    Buf[7]  = 0x01u;   // Sampling freq [15:8] → 44.1kHz bit
-    Buf[8]  = 0x04u;   // Sampling freq [7:4]=0 | Channels=Stereo(0x04)
-    Buf[9]  = 0x03u;   // VBR=0 | bitrate[22:16] (256000 = 0x03E800)
-    Buf[10] = 0xE8u;   // bitrate[15:8]
-    Buf[11] = 0x00u;   // bitrate[7:0]
-    return 12u;
-}
-
-// Check if the GET_CAPABILITIES response advertises a standard (non-vendor)
-// media codec with the given codec type byte (e.g. 0x02 = AAC).
-static BOOLEAN CapabilitiesContainsCodecType(
-    _In_reads_bytes_opt_(Len) const UCHAR* Data, _In_ USHORT Len, _In_ UCHAR CodecType)
-{
-    if (!Data || Len < 4u) return FALSE;
-    USHORT i = 0u;
-    while (i + 1u < Len) {
-        UCHAR cat  = Data[i];
-        UCHAR losc = Data[i + 1u];
-        if (cat == 0x07u && losc >= 2u && (USHORT)(i + 2u + losc) <= Len) {
-            if (Data[i + 3u] == CodecType) return TRUE;
-        }
-        if (losc == 0u) break;
-        i = (USHORT)(i + 2u + losc);
-    }
-    return FALSE;
-}
-
-// Check if the GET_CAPABILITIES response payload contains a vendor codec
-// with the given 4-byte vendor ID and 2-byte codec ID.
-static BOOLEAN CapabilitiesContainsVendorCodec(
-    _In_reads_bytes_opt_(Len) const UCHAR* Data, _In_ USHORT Len,
-    _In_ ULONG VendorId, _In_ USHORT CodecId)
-{
-    if (!Data || Len < 4u) return FALSE;
-    USHORT i = 0u;
-    while (i + 1u < Len) {
-        UCHAR cat  = Data[i];
-        UCHAR losc = Data[i + 1u];
-        if (cat == 0x07u && losc >= 6u && (USHORT)(i + 2u + losc) <= Len) {
-            if (Data[i + 3u] == 0xFFu && (USHORT)(i + 9u) < Len) {
-                ULONG vid = (ULONG)Data[i+4u] | ((ULONG)Data[i+5u] << 8u)
-                          | ((ULONG)Data[i+6u] << 16u) | ((ULONG)Data[i+7u] << 24u);
-                USHORT cid = (USHORT)Data[i+8u] | ((USHORT)Data[i+9u] << 8u);
-                if (vid == VendorId && cid == CodecId) return TRUE;
-            }
-        }
-        if (losc == 0u) break;
-        i = (USHORT)(i + 2u + losc);
-    }
-    return FALSE;
-}
-
+// Pick the preferred codec if the sink supports it (SBC otherwise) and send
+// SET_CONFIGURATION. LC3 is LE Audio only, so an LC3 preference falls back to SBC.
 static VOID HandleGetCapabilitiesResponse(
     _In_ POWB_DEVICE_EXTENSION DevExt,
     _In_reads_bytes_opt_(Len) const UCHAR* Data,
     _In_ USHORT Len)
 {
-    UCHAR payload[16];
-    USHORT plen = 0u;
-    ULONG preferred = DevExt->PreferredCodecId;
-
-    if (preferred == OWB_CODEC_LDAC &&
-        CapabilitiesContainsVendorCodec(Data, Len, 0x0000012DUL, 0x00AAu)) {
-        plen = BuildLdacSetConfig(payload, DevExt->Avdtp.RemoteSeid,
-                                  DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating LDAC\n"));
-    } else if (preferred == OWB_CODEC_APTXHD &&
-               CapabilitiesContainsVendorCodec(Data, Len, 0x000000D7UL, 0x0024u)) {
-        plen = BuildAptxSetConfig(payload, DevExt->Avdtp.RemoteSeid,
-                                   DevExt->Avdtp.LocalSeid, sizeof(payload), TRUE);
-        KdPrint(("OpenWinBlue: negotiating aptX HD\n"));
-    } else if (preferred == OWB_CODEC_APTX &&
-               CapabilitiesContainsVendorCodec(Data, Len, 0x0000004FUL, 0x0001u)) {
-        plen = BuildAptxSetConfig(payload, DevExt->Avdtp.RemoteSeid,
-                                   DevExt->Avdtp.LocalSeid, sizeof(payload), FALSE);
-        KdPrint(("OpenWinBlue: negotiating aptX Classic\n"));
-    } else if (preferred == OWB_CODEC_AAC &&
-               CapabilitiesContainsCodecType(Data, Len, 0x02u)) {
-        plen = BuildAacSetConfig(payload, DevExt->Avdtp.RemoteSeid,
-                                 DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating AAC\n"));
-    } else {
-        // Note: LC3 is an LE Audio codec and is not negotiated over classic
-        // A2DP/AVDTP — an LC3 preference intentionally falls back to SBC here.
-        plen = BuildSbcSetConfig(payload, DevExt->Avdtp.RemoteSeid,
-                                  DevExt->Avdtp.LocalSeid, sizeof(payload));
-        KdPrint(("OpenWinBlue: negotiating SBC (fallback)\n"));
-    }
+    UCHAR payload[OWB_AVDTP_SET_CONFIGURATION_MAX_LEN];
+    const ULONG codec = owb_avdtp_select_codec(DevExt->PreferredCodecId, Data, Len);
+    const size_t plen = owb_avdtp_build_set_configuration(
+        codec, DevExt->Avdtp.RemoteSeid, DevExt->Avdtp.LocalSeid,
+        payload, sizeof(payload));
 
     if (plen == 0u) {
         KdPrint(("OpenWinBlue: failed to build SET_CONFIGURATION payload\n"));
         return;
     }
-    NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SET_CONFIGURATION, payload, plen);
-    if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateConfigured;
+    KdPrint(("OpenWinBlue: negotiating codec %lu\n", codec));
+    NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_SET_CONFIGURATION,
+                                   payload, (USHORT)plen);
+    if (!NT_SUCCESS(st)) return;
+    DevExt->Avdtp.PendingCodecId = codec;
+    DevExt->Avdtp.State = AvdtpStateConfigured;
 }
 
 static VOID HandleSetConfigurationResponse(_In_ POWB_DEVICE_EXTENSION DevExt) {
+    DevExt->Avdtp.ActiveCodecId = DevExt->Avdtp.PendingCodecId;
     UCHAR seid = (UCHAR)((DevExt->Avdtp.RemoteSeid << 2u) & 0xFCu);
     NTSTATUS st = AvdtpSendCommand(DevExt, AVDTP_MSG_OPEN, &seid, 1u);
     if (NT_SUCCESS(st)) DevExt->Avdtp.State = AvdtpStateOpen;

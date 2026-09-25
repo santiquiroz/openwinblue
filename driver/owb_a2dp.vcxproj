@@ -70,6 +70,7 @@
   <ItemGroup>
     <ClCompile Include="src\owb_a2dp.c" />
     <ClCompile Include="src\avdtp.c" />
+    <ClCompile Include="src\avdtp_packets.c" />
     <ClCompile Include="src\l2cap_stream.c" />
     <ClCompile Include="src\ioctl.c" />
   </ItemGroup>
@@ -77,9 +78,11 @@
   <ItemGroup>
     <ClInclude Include="src\owb_a2dp.h" />
     <ClInclude Include="src\avdtp.h" />
+    <ClInclude Include="src\avdtp_packets.h" />
     <ClInclude Include="src\l2cap_stream.h" />
     <ClInclude Include="src\ioctl.h" />
     <ClInclude Include="owb_ioctl.h" />
+    <ClInclude Include="owb_codec_ids.h" />
   </ItemGroup>
 
   <!-- INF excluded from project build: InfVerif.dll is absent from the chocolatey WDK
