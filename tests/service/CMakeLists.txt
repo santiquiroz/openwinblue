@@ -5,6 +5,7 @@ add_executable(owb_service_tests
     codec_ldac_test.cpp
     codec_lc3_test.cpp
     codec_aac_test.cpp
+    latm_test.cpp
     codec_aptx_adaptive_test.cpp
     codec_factory_test.cpp
     ipc_test.cpp

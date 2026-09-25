@@ -80,6 +80,7 @@ target_compile_options(owb_codec_ldac PRIVATE
 # ── AAC codec wrapper (Windows Media Foundation built-in encoder) ─────────────
 add_library(owb_codec_aac STATIC
     codecs/codec_aac.cpp
+    codecs/latm.cpp
 )
 target_include_directories(owb_codec_aac PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/codecs

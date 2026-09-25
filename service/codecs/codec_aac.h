@@ -1,12 +1,14 @@
 #pragma once
+#include <memory>
 #include "codec_interface.h"
 
 namespace owb {
 
 // AAC codec wrapper.
 // Encoding uses Windows Media Foundation (MFT) AAC encoder — no external library.
-// Output: ADTS-framed AAC, compatible with A2DP AAC content protection.
-// Default: 44100 Hz, 256 kbps, ADTS output.
+// Output: one AAC-LC access unit per encode(), wrapped in LATM (AudioMuxElement with
+// in-band StreamMuxConfig) as A2DP AAC requires.
+// Default: 44100 Hz, 256 kbps.
 class CodecAac final : public ICodec {
 public:
     CodecAac();
@@ -20,11 +22,11 @@ public:
     std::optional<int64_t> get_param(std::string_view key) const override;
 
 private:
+    void start_mf_encoder();
     bool init_mf_encoder();
-    void shutdown_mf_encoder();
 
     struct Impl;
-    Impl* impl_ = nullptr;
+    std::unique_ptr<Impl> impl_;
 
     int freq_    = 44100;
     int bitrate_ = 256000;
