@@ -48,8 +48,8 @@ dotnet build gui/OpenWinBlue.slnx -c Release
 
 ### Run all tests
 ```powershell
-# C++ tests — from build dir
-cd build/nmake-debug && ctest --output-on-failure
+# C++ tests — fails if no tests are found (CI uses --preset test-all)
+ctest --preset test-nmake-debug
 
 # C# tests
 dotnet test gui/tests/OpenWinBlue.Tests/OpenWinBlue.Tests.csproj --verbosity normal

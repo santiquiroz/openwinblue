@@ -45,9 +45,22 @@
   ],
   "testPresets": [
     {
+      "name": "test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
       "name": "test-all",
+      "inherits": "test-base",
       "configurePreset": "windows-debug",
+      "configuration": "Debug",
       "output": { "verbosity": "verbose" }
+    },
+    {
+      "name": "test-nmake-debug",
+      "inherits": "test-base",
+      "configurePreset": "nmake-debug"
     }
   ]
 }

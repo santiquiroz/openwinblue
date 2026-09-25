@@ -22,7 +22,7 @@ jobs:
         run: cmake --preset windows-debug
 
       - name: Build
-        run: cmake --build build/debug --target owb_service owb_service_tests owb_driver_tests
+        run: cmake --build build/debug --config Debug --target owb_service owb_service_tests owb_driver_tests
 
       - name: Run tests
         run: ctest --preset test-all --output-on-failure
