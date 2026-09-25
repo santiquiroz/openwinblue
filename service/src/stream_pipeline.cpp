@@ -18,7 +18,9 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -31,6 +33,7 @@ constexpr size_t kBlobFeedMax   = 2048;   // cap for codecs that drain the whole
 constexpr size_t kAccumHardCap  = 1u << 18;
 constexpr auto   kIdleSleep     = std::chrono::milliseconds(5);
 constexpr auto   kReopenSleep   = std::chrono::milliseconds(50);
+constexpr int64_t kSbcModeMono  = 0;
 
 // Reduce interleaved PCM of arbitrary channel count to stereo interleaved.
 void to_stereo(const int16_t* src, size_t frames, int channels,
@@ -58,7 +61,7 @@ struct StreamPipeline::Impl {
     std::atomic<bool>     streaming{false};
     std::atomic<uint32_t> codec_id{OWB_CODEC_SBC};
 
-    std::mutex             codec_mtx;
+    mutable std::mutex     codec_mtx;
     std::unique_ptr<ICodec> codec;      // guarded by codec_mtx
     std::string            codec_name;  // guarded by codec_mtx
 
@@ -75,6 +78,27 @@ struct StreamPipeline::Impl {
         }
         codec_name = codec ? std::string(codec->name()) : std::string();
         codec_id   = id;
+    }
+
+    // The pipeline always feeds stereo PCM at the capture rate, so a codec
+    // reconfigured to another rate or to mono would play back garbled.
+    bool pipeline_can_feed(std::string_view key, int64_t value) const {
+        if (key == "freq") return !source || value == source->sample_rate();
+        if (key == "mode") return value != kSbcModeMono;
+        return true;
+    }
+
+    bool set_param(std::string_view key, int64_t value) {
+        if (!pipeline_can_feed(key, value)) return false;
+        std::lock_guard<std::mutex> lock(codec_mtx);
+        return codec && codec->set_param({key, value});
+    }
+
+    uint32_t bitrate() const {
+        std::lock_guard<std::mutex> lock(codec_mtx);
+        if (!codec) return 0;
+        const std::optional<int64_t> bps = codec->get_param("bitrate");
+        return (bps && *bps > 0) ? static_cast<uint32_t>(*bps) : 0u;
     }
 
     void drain(std::vector<uint8_t>& out) {
@@ -174,6 +198,14 @@ void StreamPipeline::stop() {
 
 void StreamPipeline::set_codec_id(uint32_t codec_id) {
     impl_->rebuild_codec(codec_id);
+}
+
+bool StreamPipeline::set_codec_param(std::string_view key, int64_t value) {
+    return impl_->set_param(key, value);
+}
+
+uint32_t StreamPipeline::bitrate() const {
+    return impl_->bitrate();
 }
 
 uint32_t StreamPipeline::codec_id() const noexcept {

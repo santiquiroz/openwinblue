@@ -10,11 +10,105 @@
 #include "codec_controller.h"
 #include "owb_ioctl.h"
 #include "../ai/ai_pipeline.h"
+#include <algorithm>
+#include <array>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace owb {
+
+namespace {
+
+constexpr std::string_view kAiTarget       = "AI";
+constexpr std::string_view kSwitchKey      = "switch";
+constexpr std::string_view kBitpoolKey     = "bitpool";
+constexpr std::string_view kDefaultCodec   = "SBC";
+constexpr int64_t          kMinSbcBitpool  = 2;
+constexpr int64_t          kMaxSbcBitpool  = 53;
+
+struct CodecNameId {
+    std::string_view name;
+    uint32_t         id;
+};
+
+constexpr std::array<CodecNameId, 7> kCodecNames{{
+    {"SBC",           OWB_CODEC_SBC},
+    {"LDAC",          OWB_CODEC_LDAC},
+    {"aptX",          OWB_CODEC_APTX},
+    {"aptX-HD",       OWB_CODEC_APTXHD},
+    {"AAC",           OWB_CODEC_AAC},
+    {"LC3",           OWB_CODEC_LC3},
+    {"aptX-Adaptive", OWB_CODEC_APTX_ADAPTIVE},
+}};
+
+std::optional<uint32_t> codec_id_from_name(std::string_view name) {
+    for (const auto& entry : kCodecNames)
+        if (entry.name == name) return entry.id;
+    return std::nullopt;
+}
+
+std::string_view codec_name_from_id(uint32_t id) {
+    for (const auto& entry : kCodecNames)
+        if (entry.id == id) return entry.name;
+    return {};
+}
+
+template <size_t N>
+std::string_view bounded_string(const char (&field)[N]) {
+    return std::string_view(field, strnlen(field, N));
+}
+
+template <size_t N>
+void copy_name(char (&dst)[N], std::string_view name) {
+    const size_t len = std::min(name.size(), N - 1);
+    std::memcpy(dst, name.data(), len);
+    dst[len] = '\0';
+}
+
+int64_t normalize_param(std::string_view key, int64_t value) {
+    if (key == kBitpoolKey) return std::clamp(value, kMinSbcBitpool, kMaxSbcBitpool);
+    return value;
+}
+
+// A message-mode pipe reports ERROR_MORE_DATA when a message is longer than
+// the buffer; the remaining bytes stay readable, so that is not a failure.
+bool read_exact(HANDLE pipe, void* buf, DWORD len) {
+    auto* dst = static_cast<uint8_t*>(buf);
+    DWORD total = 0;
+    while (total < len) {
+        DWORD got = 0;
+        const BOOL ok = ReadFile(pipe, dst + total, len - total, &got, nullptr);
+        if (!ok && GetLastError() != ERROR_MORE_DATA) return false;
+        if (got == 0) return false;
+        total += got;
+    }
+    return true;
+}
+
+bool write_all(HANDLE pipe, const void* buf, DWORD len) {
+    DWORD written = 0;
+    return WriteFile(pipe, buf, len, &written, nullptr) && written == len;
+}
+
+bool write_message(HANDLE pipe, ipc::MsgType type, const void* payload, uint16_t len) {
+    const ipc::MsgHeader hdr{ type, len };
+    if (!write_all(pipe, &hdr, sizeof(hdr))) return false;
+    return len == 0 || write_all(pipe, payload, len);
+}
+
+bool write_ack(HANDLE pipe, bool success) {
+    const ipc::AckPayload ack{ success ? uint8_t{1} : uint8_t{0}, {0u, 0u, 0u} };
+    return write_message(pipe, ipc::MsgType::CodecAck, &ack, sizeof(ack));
+}
+
+bool connect_client(HANDLE pipe) {
+    return ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+}
+
+} // namespace
 
 struct IpcServer::Impl {
     HANDLE               pipe        = INVALID_HANDLE_VALUE;
@@ -22,6 +116,88 @@ struct IpcServer::Impl {
     A2dpStream*          stream_     = nullptr;
     owb::ai::AiPipeline* ai_         = nullptr;
     ICodecController*    controller_ = nullptr;
+
+    bool serve_next_message() {
+        ipc::MsgHeader hdr{};
+        return read_exact(pipe, &hdr, sizeof(hdr)) && handle_message(hdr);
+    }
+
+    bool handle_message(const ipc::MsgHeader& hdr) {
+        switch (hdr.type) {
+            case ipc::MsgType::Ping:      return write_message(pipe, ipc::MsgType::Pong, nullptr, 0);
+            case ipc::MsgType::GetStatus: return reply_status();
+            case ipc::MsgType::SetCodec:  return handle_set_codec(hdr.payload_len);
+            default:                      return false;
+        }
+    }
+
+    bool reply_status() {
+        const ipc::StatusPayload status = build_status();
+        return write_message(pipe, ipc::MsgType::StatusReply, &status, sizeof(status));
+    }
+
+    ipc::StatusPayload build_status() const {
+        ipc::StatusPayload status{};
+        copy_name(status.codec_name, kDefaultCodec);
+        // Prefer the live pipeline: it reflects what the service is encoding now.
+        if (controller_) fill_status_from_controller(status);
+        else             fill_status_from_driver(status);
+        status.hfp_guard_on = 0u;  // reported by the GUI's Level-1 control
+        return status;
+    }
+
+    void fill_status_from_controller(ipc::StatusPayload& status) const {
+        const std::string name = controller_->codec_name();
+        if (!name.empty()) copy_name(status.codec_name, name);
+        status.is_capturing = controller_->is_streaming() ? 1u : 0u;
+        status.bitrate      = controller_->bitrate();
+    }
+
+    void fill_status_from_driver(ipc::StatusPayload& status) const {
+        if (!stream_ || !stream_->is_open()) return;
+        OWB_DEVICE_STATE dev_state{};
+        if (!stream_->get_device_state(&dev_state)) return;
+        status.is_capturing = (dev_state.state == OWB_STATE_STREAMING) ? 1u : 0u;
+        copy_name(status.codec_name, codec_name_from_id(dev_state.active_codec_id));
+    }
+
+    bool handle_set_codec(uint16_t payload_len) {
+        std::vector<uint8_t> raw(payload_len);
+        if (payload_len > 0 && !read_exact(pipe, raw.data(), payload_len)) return false;
+        if (payload_len != sizeof(ipc::SetCodecPayload)) return write_ack(pipe, false);
+
+        ipc::SetCodecPayload request{};
+        std::memcpy(&request, raw.data(), sizeof(request));
+        return write_ack(pipe, apply_request(request));
+    }
+
+    bool apply_request(const ipc::SetCodecPayload& request) {
+        const std::string_view target = bounded_string(request.codec_name);
+        const std::string_view key    = bounded_string(request.param_key);
+        if (target == kAiTarget) return apply_ai_param(key, request.param_value);
+
+        const std::optional<uint32_t> codec_id = codec_id_from_name(target);
+        if (!codec_id) return false;
+        if (key == kSwitchKey) return switch_codec(*codec_id, key, request.param_value);
+        return set_codec_param(key, normalize_param(key, request.param_value));
+    }
+
+    bool apply_ai_param(std::string_view key, int64_t value) {
+        if (!ai_) return false;
+        ai_->set_param(key, value);
+        return true;
+    }
+
+    // Switches the user-mode encoder; the driver negotiates the codec separately.
+    bool switch_codec(uint32_t codec_id, std::string_view key, int64_t value) {
+        if (controller_) controller_->set_codec_id(codec_id);
+        if (stream_) return stream_->set_codec_config(codec_id, key, value);
+        return controller_ != nullptr;
+    }
+
+    bool set_codec_param(std::string_view key, int64_t value) {
+        return controller_ && controller_->set_codec_param(key, value);
+    }
 };
 
 IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai, ICodecController* controller)
@@ -62,140 +238,11 @@ void IpcServer::stop() {
 bool IpcServer::serve_one() {
     if (!impl_->running || impl_->pipe == INVALID_HANDLE_VALUE)
         return false;
-
-    // Block until a client connects
-    BOOL connected = ConnectNamedPipe(impl_->pipe, nullptr);
-    if (!connected && GetLastError() != ERROR_PIPE_CONNECTED)
+    if (!connect_client(impl_->pipe))
         return false;
 
-    // Message loop for this client connection
-    bool client_done = false;
-    while (!client_done && impl_->running) {
-        ipc::MsgHeader hdr{};
-        DWORD bytes_read = 0;
-        BOOL ok = ReadFile(impl_->pipe, &hdr, sizeof(hdr), &bytes_read, nullptr);
-
-        if (!ok || bytes_read < sizeof(hdr)) break;
-
-        switch (hdr.type) {
-            case ipc::MsgType::Ping: {
-                ipc::MsgHeader pong{ ipc::MsgType::Pong, 0 };
-                DWORD written = 0;
-                if (!WriteFile(impl_->pipe, &pong, sizeof(pong), &written, nullptr)
-                        || written != sizeof(pong)) {
-                    client_done = true;
-                }
-                client_done = true;
-                break;
-            }
-            case ipc::MsgType::GetStatus: {
-                // TODO(phase2c): wire real state from AudioCapture + HfpGuard
-                ipc::MsgHeader reply{ ipc::MsgType::StatusReply,
-                                      sizeof(ipc::StatusPayload) };
-                ipc::StatusPayload status{};
-
-                // Prefer the live pipeline for codec/streaming state; it reflects
-                // what the service is actually encoding right now.
-                if (impl_->controller_) {
-                    const std::string name = impl_->controller_->codec_name();
-                    strncpy_s(status.codec_name, sizeof(status.codec_name),
-                              name.empty() ? "SBC" : name.c_str(), _TRUNCATE);
-                    status.is_capturing = impl_->controller_->is_streaming() ? 1u : 0u;
-                } else if (impl_->stream_ && impl_->stream_->is_open()) {
-                    OWB_DEVICE_STATE devState{};
-                    if (impl_->stream_->get_device_state(&devState)) {
-                        status.is_capturing = (devState.state == OWB_STATE_STREAMING) ? 1u : 0u;
-                        static const char* kNames[] =
-                            {"SBC","LDAC","aptX","aptX-HD","AAC","LC3","aptX-Adaptive"};
-                        if (devState.active_codec_id < (sizeof(kNames)/sizeof(kNames[0])))
-                            strncpy_s(status.codec_name, sizeof(status.codec_name),
-                                      kNames[devState.active_codec_id], _TRUNCATE);
-                    } else {
-                        strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
-                    }
-                } else {
-                    strncpy_s(status.codec_name, sizeof(status.codec_name), "SBC", _TRUNCATE);
-                }
-                status.hfp_guard_on = 0u;  // reported by the GUI's Level-1 control
-
-                DWORD written = 0;
-                BOOL hdr_ok = WriteFile(impl_->pipe, &reply, sizeof(reply), &written, nullptr);
-                if (hdr_ok && written == sizeof(reply)) {
-                    WriteFile(impl_->pipe, &status, sizeof(status), &written, nullptr);
-                }
-                client_done = true;
-                break;
-            }
-            case ipc::MsgType::SetCodec: {
-                // Read SetCodecPayload (codec_name + param_key + param_value)
-                if (hdr.payload_len < sizeof(ipc::SetCodecPayload)) {
-                    client_done = true;
-                    break;
-                }
-                ipc::SetCodecPayload codec_payload{};
-                DWORD payload_read = 0;
-                ReadFile(impl_->pipe, &codec_payload,
-                         sizeof(codec_payload), &payload_read, nullptr);
-
-                // "AI" codec name → route to AI pipeline, not the driver
-                if (std::strncmp(codec_payload.codec_name, "AI", 2) == 0) {
-                    bool ai_success = false;
-                    if (impl_->ai_) {
-                        const size_t klen = strnlen(codec_payload.param_key,
-                                                    sizeof(codec_payload.param_key));
-                        impl_->ai_->set_param(
-                            std::string_view(codec_payload.param_key, klen),
-                            codec_payload.param_value);
-                        ai_success = true;
-                    }
-                    ipc::MsgHeader ai_ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };
-                    ipc::AckPayload ai_ack_p{ ai_success ? uint8_t{1} : uint8_t{0}, {0u,0u,0u} };
-                    DWORD aw = 0;
-                    BOOL aok = WriteFile(impl_->pipe, &ai_ack, sizeof(ai_ack), &aw, nullptr);
-                    if (aok && aw == sizeof(ai_ack))
-                        WriteFile(impl_->pipe, &ai_ack_p, sizeof(ai_ack_p), &aw, nullptr);
-                    client_done = true;
-                    break;
-                }
-
-                // Resolve codec name string → OWB_CODEC_* ID
-                uint32_t codec_id = OWB_CODEC_SBC;  // default
-                if      (std::strncmp(codec_payload.codec_name, "LDAC",    4) == 0) codec_id = OWB_CODEC_LDAC;
-                else if (std::strncmp(codec_payload.codec_name, "aptX-HD", 7) == 0) codec_id = OWB_CODEC_APTXHD;
-                else if (std::strncmp(codec_payload.codec_name, "aptX",    4) == 0) codec_id = OWB_CODEC_APTX;
-
-                // Switch the user-mode encoder so the service actually produces
-                // frames in the requested codec (driver negotiation is separate).
-                if (impl_->controller_)
-                    impl_->controller_->set_codec_id(codec_id);
-
-                // Forward to driver via A2dpStream
-                bool success = false;
-                if (impl_->stream_) {
-                    const size_t key_len = strnlen(codec_payload.param_key,
-                                                   sizeof(codec_payload.param_key));
-                    success = impl_->stream_->set_codec_config(
-                        codec_id,
-                        std::string_view(codec_payload.param_key, key_len),
-                        codec_payload.param_value);
-                }
-                if (impl_->controller_ && !impl_->stream_) success = true;
-
-                // Reply with CodecAck
-                ipc::MsgHeader ack{ ipc::MsgType::CodecAck, sizeof(ipc::AckPayload) };
-                ipc::AckPayload ack_payload{ success ? uint8_t{1} : uint8_t{0}, {0u, 0u, 0u} };
-                DWORD written = 0;
-                BOOL ack_ok = WriteFile(impl_->pipe, &ack, sizeof(ack), &written, nullptr);
-                if (ack_ok && written == sizeof(ack))
-                    WriteFile(impl_->pipe, &ack_payload, sizeof(ack_payload), &written, nullptr);
-                client_done = true;
-                break;
-            }
-            default:
-                client_done = true;
-                break;
-        }
-    }
+    // The session lasts until the client closes its end or sends garbage.
+    while (impl_->running && impl_->serve_next_message()) {}
 
     DisconnectNamedPipe(impl_->pipe);
     return true;

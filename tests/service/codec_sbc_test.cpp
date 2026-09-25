@@ -28,6 +28,18 @@ TEST(CodecSbc, DefaultParamsAreReasonable) {
     EXPECT_EQ(codec.get_param("mode"),    owb::CodecSbc::kModeJointStereo);
 }
 
+// A2DP SBC: 119-byte joint-stereo frame (bitpool 53) per 128 samples at 44.1 kHz.
+TEST(CodecSbc, BitrateIsDerivedFromFrameLength) {
+    owb::CodecSbc codec;
+    EXPECT_EQ(codec.get_param("bitrate"), 327993);
+}
+
+TEST(CodecSbc, BitrateFollowsBitpool) {
+    owb::CodecSbc codec;
+    codec.set_param({"bitpool", 35});
+    EXPECT_EQ(codec.get_param("bitrate"), 228768);
+}
+
 TEST(CodecSbc, UnknownParamReturnsNullopt) {
     owb::CodecSbc codec;
     EXPECT_EQ(codec.get_param("nonexistent"), std::nullopt);

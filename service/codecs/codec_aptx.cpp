@@ -28,6 +28,11 @@ static constexpr size_t kInputBytesPerBlock = kSamplesPerBlock * kBytesPerSample
 // Max output: 6 bytes per block (HD), 4 bytes (Classic)
 static constexpr size_t kMaxOutputPerBlock  = 6;
 
+static constexpr int64_t bits_per_stereo_sample(bool hd) noexcept {
+    const int64_t block_bytes = hd ? 6 : 4;
+    return block_bytes * 8 / static_cast<int64_t>(kSamplesPerBlock);
+}
+
 // Convert a single int16 sample to 3-byte little-endian 24-bit (sign-extended).
 static void write_s24le(uint8_t* dst, int16_t s) noexcept {
     const int32_t s24 = static_cast<int32_t>(s) << 8;
@@ -125,6 +130,7 @@ bool CodecAptx::set_param(CodecParam p) {
 std::optional<int64_t> CodecAptx::get_param(std::string_view key) const {
     if (key == "freq") return freq_;
     if (key == "hd")   return hd_ ? 1 : 0;
+    if (key == "bitrate") return static_cast<int64_t>(freq_) * bits_per_stereo_sample(hd_);
     return std::nullopt;
 }
 

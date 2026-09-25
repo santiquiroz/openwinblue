@@ -40,3 +40,13 @@ TEST(CodecAptxHd, DefaultParamsAreHD) {
     owb::CodecAptx codec(true);
     EXPECT_EQ(codec.get_param("hd"), 1);
 }
+
+TEST(CodecAptx, BitrateIsFourToOneOfPcm) {
+    owb::CodecAptx codec(false);
+    EXPECT_EQ(codec.get_param("bitrate"), 352800);
+}
+
+TEST(CodecAptxHd, BitrateIsSixBytesPerBlock) {
+    owb::CodecAptx codec(true);
+    EXPECT_EQ(codec.get_param("bitrate"), 529200);
+}

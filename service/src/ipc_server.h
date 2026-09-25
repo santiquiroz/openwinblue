@@ -11,8 +11,8 @@ namespace owb {
 // The GUI connects to \\.\pipe\openwinblue and exchanges binary messages
 // defined in ipc_protocol.h.
 //
-// serve_one() blocks until one client connects, exchanges messages,
-// then disconnects. Call in a loop on a dedicated thread.
+// serve_one() blocks until one client connects, exchanges messages until the
+// client closes its end, then disconnects. Call in a loop on a dedicated thread.
 class IpcServer {
 public:
     explicit IpcServer(A2dpStream* stream = nullptr,
@@ -26,7 +26,7 @@ public:
     // Signal the server to stop accepting connections and close the pipe.
     void stop();
 
-    // Block until one client connects, exchanges at least one message, disconnects.
+    // Block until one client connects and serve its session until it closes.
     // Returns false if stopped or an error occurred.
     bool serve_one();
 

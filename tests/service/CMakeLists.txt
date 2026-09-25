@@ -11,6 +11,7 @@ add_executable(owb_service_tests
     hfp_guard_test.cpp
     a2dp_stream_test.cpp
     ai_pipeline_test.cpp
+    stream_pipeline_test.cpp
 )
 
 target_link_libraries(owb_service_tests PRIVATE
@@ -26,6 +27,7 @@ target_link_libraries(owb_service_tests PRIVATE
     owb_ipc_server
     owb_a2dp_stream
     owb_ai_pipeline
+    owb_stream_pipeline
     ole32 oleaut32
 )
 

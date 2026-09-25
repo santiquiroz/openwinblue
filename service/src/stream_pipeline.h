@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "codec_controller.h"
 
@@ -36,9 +37,11 @@ public:
 
     // ICodecController
     void        set_codec_id(uint32_t codec_id) override;
+    bool        set_codec_param(std::string_view key, int64_t value) override;
     uint32_t    codec_id() const noexcept       override;
     std::string codec_name() const              override;
     bool        is_streaming() const noexcept   override;
+    uint32_t    bitrate() const                 override;
 
 private:
     struct Impl;

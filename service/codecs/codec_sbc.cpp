@@ -42,6 +42,14 @@ int64_t sbc_to_freq(uint8_t f) {
         default:             return 44100;
     }
 }
+int64_t sbc_subbands(uint8_t s) { return (s == SBC_SB_8) ? 8 : 4; }
+int64_t sbc_blocks(uint8_t b)   { return 4 + static_cast<int64_t>(b) * 4; }
+
+int64_t sbc_bitrate_bps(sbc_struct* sbc) {
+    const int64_t frame_bits = static_cast<int64_t>(sbc_get_frame_length(sbc)) * 8;
+    const int64_t samples    = sbc_subbands(sbc->subbands) * sbc_blocks(sbc->blocks);
+    return frame_bits * sbc_to_freq(sbc->frequency) / samples;
+}
 } // namespace
 
 // ── Implementation ───────────────────────────────────────────────────────────
@@ -173,6 +181,7 @@ std::optional<int64_t> CodecSbc::get_param(std::string_view key) const {
         }
     }
     if (key == "alloc")    return cfg_->allocation;
+    if (key == "bitrate")  return sbc_bitrate_bps(sbc_.get());
     return std::nullopt;
 }
 

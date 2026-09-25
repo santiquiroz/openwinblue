@@ -172,11 +172,26 @@ target_compile_options(owb_a2dp_stream PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── Stream pipeline (capture → AI → codec → driver orchestrator) ─────────────
+add_library(owb_stream_pipeline STATIC
+    src/stream_pipeline.cpp
+)
+target_include_directories(owb_stream_pipeline PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/codecs
+    ${CMAKE_CURRENT_SOURCE_DIR}/ai
+)
+target_compile_options(owb_stream_pipeline PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+target_link_libraries(owb_stream_pipeline PUBLIC
+    owb_codec_factory owb_a2dp_stream owb_ai_pipeline
+)
+
 # ── owb_service executable ───────────────────────────────────────────────────
 add_executable(owb_service
     src/main.cpp
     src/audio_capture.cpp
-    src/stream_pipeline.cpp
 )
 target_include_directories(owb_service PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -187,6 +202,7 @@ target_compile_options(owb_service PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_service PRIVATE
+    owb_stream_pipeline
     owb_codec_factory owb_codec_lc3 owb_codec_aac owb_hfp_guard owb_ipc_server owb_a2dp_stream
     owb_ai_pipeline
     ole32 oleaut32 uuid Mmdevapi advapi32
