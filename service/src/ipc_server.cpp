@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <winioctl.h>
+#include <sddl.h>
 
 #include "ipc_server.h"
 #include "ipc_protocol.h"
@@ -12,10 +13,14 @@
 #include "../ai/ai_pipeline.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <condition_variable>
 #include <cstring>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace owb {
@@ -73,58 +78,196 @@ int64_t normalize_param(std::string_view key, int64_t value) {
     return value;
 }
 
+constexpr DWORD kPipeBufferSize = 4096;
+
+// Every I/O is overlapped so a stop request can cancel it from another thread.
+struct PipeIo {
+    HANDLE pipe;
+    HANDLE io_event;
+    HANDLE stop_event;
+};
+
+OVERLAPPED new_overlapped(HANDLE io_event) {
+    ResetEvent(io_event);
+    OVERLAPPED ov{};
+    ov.hEvent = io_event;
+    return ov;
+}
+
 // A message-mode pipe reports ERROR_MORE_DATA when a message is longer than
 // the buffer; the remaining bytes stay readable, so that is not a failure.
-bool read_exact(HANDLE pipe, void* buf, DWORD len) {
+bool is_in_flight(BOOL started) {
+    if (started) return true;
+    const DWORD err = GetLastError();
+    return err == ERROR_IO_PENDING || err == ERROR_MORE_DATA;
+}
+
+// On stop the I/O is cancelled and awaited so the OVERLAPPED never outlives it.
+bool await_io(const PipeIo& io, OVERLAPPED& ov, DWORD& transferred) {
+    const HANDLE handles[] = { io.io_event, io.stop_event };
+    if (WaitForMultipleObjects(2, handles, FALSE, INFINITE) != WAIT_OBJECT_0) {
+        CancelIoEx(io.pipe, &ov);
+        GetOverlappedResult(io.pipe, &ov, &transferred, TRUE);
+        return false;
+    }
+    return GetOverlappedResult(io.pipe, &ov, &transferred, FALSE)
+        || GetLastError() == ERROR_MORE_DATA;
+}
+
+bool finish_io(const PipeIo& io, BOOL started, OVERLAPPED& ov, DWORD& transferred) {
+    return is_in_flight(started) && await_io(io, ov, transferred);
+}
+
+DWORD read_some(const PipeIo& io, void* buf, DWORD len) {
+    OVERLAPPED ov = new_overlapped(io.io_event);
+    DWORD got = 0;
+    const BOOL started = ReadFile(io.pipe, buf, len, nullptr, &ov);
+    return finish_io(io, started, ov, got) ? got : 0;
+}
+
+bool read_exact(const PipeIo& io, void* buf, DWORD len) {
     auto* dst = static_cast<uint8_t*>(buf);
     DWORD total = 0;
     while (total < len) {
-        DWORD got = 0;
-        const BOOL ok = ReadFile(pipe, dst + total, len - total, &got, nullptr);
-        if (!ok && GetLastError() != ERROR_MORE_DATA) return false;
+        const DWORD got = read_some(io, dst + total, len - total);
         if (got == 0) return false;
         total += got;
     }
     return true;
 }
 
-bool write_all(HANDLE pipe, const void* buf, DWORD len) {
+bool write_all(const PipeIo& io, const void* buf, DWORD len) {
+    OVERLAPPED ov = new_overlapped(io.io_event);
     DWORD written = 0;
-    return WriteFile(pipe, buf, len, &written, nullptr) && written == len;
+    const BOOL started = WriteFile(io.pipe, buf, len, nullptr, &ov);
+    return finish_io(io, started, ov, written) && written == len;
 }
 
-bool write_message(HANDLE pipe, ipc::MsgType type, const void* payload, uint16_t len) {
+bool write_message(const PipeIo& io, ipc::MsgType type, const void* payload, uint16_t len) {
     const ipc::MsgHeader hdr{ type, len };
-    if (!write_all(pipe, &hdr, sizeof(hdr))) return false;
-    return len == 0 || write_all(pipe, payload, len);
+    if (!write_all(io, &hdr, sizeof(hdr))) return false;
+    return len == 0 || write_all(io, payload, len);
 }
 
-bool write_ack(HANDLE pipe, bool success) {
+bool write_ack(const PipeIo& io, bool success) {
     const ipc::AckPayload ack{ success ? uint8_t{1} : uint8_t{0}, {0u, 0u, 0u} };
-    return write_message(pipe, ipc::MsgType::CodecAck, &ack, sizeof(ack));
+    return write_message(io, ipc::MsgType::CodecAck, &ack, sizeof(ack));
 }
 
-bool connect_client(HANDLE pipe) {
-    return ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+bool connect_client(const PipeIo& io) {
+    OVERLAPPED ov = new_overlapped(io.io_event);
+    if (ConnectNamedPipe(io.pipe, &ov) || GetLastError() == ERROR_PIPE_CONNECTED) return true;
+    if (GetLastError() != ERROR_IO_PENDING) return false;
+    DWORD unused = 0;
+    return await_io(io, ov, unused);
+}
+
+// FILE_FLAG_FIRST_PIPE_INSTANCE makes creation fail if anyone already owns the
+// name, so a squatter cannot impersonate the service to the elevated GUI.
+HANDLE create_secured_pipe(const IpcPipeConfig& config) {
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            config.sddl.c_str(), SDDL_REVISION_1, &descriptor, nullptr))
+        return INVALID_HANDLE_VALUE;
+
+    SECURITY_ATTRIBUTES attributes{ sizeof(attributes), descriptor, FALSE };
+    const HANDLE pipe = CreateNamedPipeW(
+        config.name.c_str(),
+        PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+        PIPE_UNLIMITED_INSTANCES,
+        kPipeBufferSize, kPipeBufferSize,
+        0, &attributes
+    );
+    LocalFree(descriptor);
+    return pipe;
+}
+
+void close_handle(HANDLE& handle, HANDLE invalid) {
+    if (handle == invalid) return;
+    CloseHandle(handle);
+    handle = invalid;
 }
 
 } // namespace
 
 struct IpcServer::Impl {
-    HANDLE               pipe        = INVALID_HANDLE_VALUE;
-    bool                 running     = false;
-    A2dpStream*          stream_     = nullptr;
-    owb::ai::AiPipeline* ai_         = nullptr;
-    ICodecController*    controller_ = nullptr;
+    HANDLE                  pipe        = INVALID_HANDLE_VALUE;
+    HANDLE                  io_event    = nullptr;
+    HANDLE                  stop_event  = nullptr;
+    std::atomic<bool>       running{false};
+    std::mutex              serve_mtx;
+    std::condition_variable serve_idle;
+    bool                    serving     = false;
+    IpcPipeConfig           config_;
+    A2dpStream*             stream_     = nullptr;
+    owb::ai::AiPipeline*    ai_         = nullptr;
+    ICodecController*       controller_ = nullptr;
+
+    class ServeScope {
+    public:
+        explicit ServeScope(Impl& owner) : impl_(owner), entered_(owner.enter_serve()) {}
+        ~ServeScope() { if (entered_) impl_.leave_serve(); }
+        ServeScope(const ServeScope&)            = delete;
+        ServeScope& operator=(const ServeScope&) = delete;
+
+        bool entered() const { return entered_; }
+
+    private:
+        Impl&      impl_;
+        const bool entered_;
+    };
+
+    PipeIo io() const { return { pipe, io_event, stop_event }; }
+
+    bool open_pipe() {
+        stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        io_event   = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        pipe       = create_secured_pipe(config_);
+        return stop_event && io_event && pipe != INVALID_HANDLE_VALUE;
+    }
+
+    void close_handles() {
+        close_handle(pipe, INVALID_HANDLE_VALUE);
+        close_handle(io_event, nullptr);
+        close_handle(stop_event, nullptr);
+    }
+
+    // stop() clears running before taking serve_mtx, so a serve_one() that
+    // enters later bails out instead of using handles that are being closed.
+    bool enter_serve() {
+        std::lock_guard lock(serve_mtx);
+        if (!running) return false;
+        serving = true;
+        return true;
+    }
+
+    void leave_serve() {
+        {
+            std::lock_guard lock(serve_mtx);
+            serving = false;
+        }
+        serve_idle.notify_all();
+    }
+
+    void wait_until_idle() {
+        std::unique_lock lock(serve_mtx);
+        serve_idle.wait(lock, [this] { return !serving; });
+    }
+
+    void serve_session() {
+        while (running && serve_next_message()) {}
+        DisconnectNamedPipe(pipe);
+    }
 
     bool serve_next_message() {
         ipc::MsgHeader hdr{};
-        return read_exact(pipe, &hdr, sizeof(hdr)) && handle_message(hdr);
+        return read_exact(io(), &hdr, sizeof(hdr)) && handle_message(hdr);
     }
 
     bool handle_message(const ipc::MsgHeader& hdr) {
         switch (hdr.type) {
-            case ipc::MsgType::Ping:      return write_message(pipe, ipc::MsgType::Pong, nullptr, 0);
+            case ipc::MsgType::Ping:      return write_message(io(), ipc::MsgType::Pong, nullptr, 0);
             case ipc::MsgType::GetStatus: return reply_status();
             case ipc::MsgType::SetCodec:  return handle_set_codec(hdr.payload_len);
             default:                      return false;
@@ -133,7 +276,7 @@ struct IpcServer::Impl {
 
     bool reply_status() {
         const ipc::StatusPayload status = build_status();
-        return write_message(pipe, ipc::MsgType::StatusReply, &status, sizeof(status));
+        return write_message(io(), ipc::MsgType::StatusReply, &status, sizeof(status));
     }
 
     ipc::StatusPayload build_status() const {
@@ -163,12 +306,12 @@ struct IpcServer::Impl {
 
     bool handle_set_codec(uint16_t payload_len) {
         std::vector<uint8_t> raw(payload_len);
-        if (payload_len > 0 && !read_exact(pipe, raw.data(), payload_len)) return false;
-        if (payload_len != sizeof(ipc::SetCodecPayload)) return write_ack(pipe, false);
+        if (payload_len > 0 && !read_exact(io(), raw.data(), payload_len)) return false;
+        if (payload_len != sizeof(ipc::SetCodecPayload)) return write_ack(io(), false);
 
         ipc::SetCodecPayload request{};
         std::memcpy(&request, raw.data(), sizeof(request));
-        return write_ack(pipe, apply_request(request));
+        return write_ack(io(), apply_request(request));
     }
 
     bool apply_request(const ipc::SetCodecPayload& request) {
@@ -200,51 +343,41 @@ struct IpcServer::Impl {
     }
 };
 
-IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai, ICodecController* controller)
+IpcServer::IpcServer(A2dpStream* stream, ai::AiPipeline* ai, ICodecController* controller,
+                     IpcPipeConfig config)
     : impl_(std::make_unique<Impl>()) {
     impl_->stream_     = stream;
     impl_->ai_         = ai;
     impl_->controller_ = controller;
+    impl_->config_     = std::move(config);
 }
 
 IpcServer::~IpcServer() { stop(); }
 
 bool IpcServer::start() {
     if (impl_->running) return true;
-
-    impl_->pipe = CreateNamedPipeW(
-        ipc::kPipeName,
-        PIPE_ACCESS_DUPLEX,
-        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-        PIPE_UNLIMITED_INSTANCES,
-        4096, 4096,
-        0, nullptr
-    );
-    if (impl_->pipe == INVALID_HANDLE_VALUE) return false;
-
+    if (!impl_->open_pipe()) {
+        impl_->close_handles();
+        return false;
+    }
     impl_->running = true;
     return true;
 }
 
 void IpcServer::stop() {
-    if (!impl_->running) return;
-    impl_->running = false;
-    if (impl_->pipe != INVALID_HANDLE_VALUE) {
-        CloseHandle(impl_->pipe);
-        impl_->pipe = INVALID_HANDLE_VALUE;
-    }
+    if (!impl_->running.exchange(false)) return;
+    SetEvent(impl_->stop_event);
+    impl_->wait_until_idle();
+    impl_->close_handles();
 }
 
 bool IpcServer::serve_one() {
-    if (!impl_->running || impl_->pipe == INVALID_HANDLE_VALUE)
-        return false;
-    if (!connect_client(impl_->pipe))
+    const Impl::ServeScope scope(*impl_);
+    if (!scope.entered() || !connect_client(impl_->io()))
         return false;
 
-    // The session lasts until the client closes its end or sends garbage.
-    while (impl_->running && impl_->serve_next_message()) {}
-
-    DisconnectNamedPipe(impl_->pipe);
+    // The session lasts until the client closes its end, sends garbage or stop() is called.
+    impl_->serve_session();
     return true;
 }
 

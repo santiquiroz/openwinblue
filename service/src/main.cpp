@@ -89,12 +89,13 @@ int run_service() {
     }
 
     std::puts("Shutting down\xe2\x80\xa6");
+    // The IPC thread calls into pipeline and a2dp: retire it before stopping them.
     ipc.stop();
+    ipc_thread.join();
     pipeline.stop();
     a2dp.close();
     hfp_guard.stop();
     capture.stop();
-    ipc_thread.join();
 
     CoUninitialize();
     std::puts("Done.");

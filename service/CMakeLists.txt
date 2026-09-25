@@ -158,6 +158,7 @@ target_compile_options(owb_ipc_server PRIVATE
 )
 target_link_libraries(owb_ipc_server PUBLIC
     owb_ai_pipeline
+    advapi32   # ConvertStringSecurityDescriptorToSecurityDescriptorW
 )
 
 # ── A2DP stream (DeviceIoControl to kernel driver) ────────────────────────────

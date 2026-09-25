@@ -1,5 +1,6 @@
 // tests/service/ipc_test.cpp
 #include <gtest/gtest.h>
+#include <atomic>
 #include <thread>
 #include <chrono>
 #include <string>
@@ -10,19 +11,38 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 
 #include "ipc_server.h"
 #include "ipc_protocol.h"
 #include "codec_controller.h"
 #include "owb_codec_ids.h"
 
+namespace {
+
+// A private name keeps the tests away from a running owb-service.
+constexpr wchar_t kTestPipeName[] = L"\\\\.\\pipe\\openwinblue-test";
+
+// The production DACL admits only SYSTEM and elevated admins; Owner Rights lets
+// the non-elevated test process talk to the pipe it created.
+owb::IpcPipeConfig test_pipe() {
+    return { kTestPipeName, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)" };
+}
+
+owb::IpcPipeConfig test_pipe_with_production_dacl() {
+    return { kTestPipeName, owb::kIpcPipeSddl };
+}
+
+} // namespace
+
 // Helper: connect as a named-pipe client and send Ping, expect Pong back.
 static bool client_ping(int timeout_ms = 3000) {
-    if (!WaitNamedPipeW(owb::ipc::kPipeName, static_cast<DWORD>(timeout_ms)))
+    if (!WaitNamedPipeW(kTestPipeName, static_cast<DWORD>(timeout_ms)))
         return false;
 
     HANDLE pipe = CreateFileW(
-        owb::ipc::kPipeName,
+        kTestPipeName,
         GENERIC_READ | GENERIC_WRITE,
         0, nullptr, OPEN_EXISTING,
         0, nullptr
@@ -44,7 +64,7 @@ static bool client_ping(int timeout_ms = 3000) {
 }
 
 TEST(IpcServer, PingPongRoundTrip) {
-    owb::IpcServer server;
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());
     ASSERT_TRUE(server.start());
 
     // Run one serve_one() on a background thread, client connects from this thread
@@ -57,24 +77,24 @@ TEST(IpcServer, PingPongRoundTrip) {
 }
 
 TEST(IpcServer, StopIsIdempotent) {
-    owb::IpcServer server;
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());
     server.start();
     server.stop();
     server.stop();  // must not crash
 }
 
 TEST(IpcServer, SetCodec_WhenNotConnected_RepliesWithCodecAck) {
-    owb::IpcServer server(nullptr);  // null stream — stub mode
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());  // null stream — stub mode
     ASSERT_TRUE(server.start());
 
     std::thread t([&server] { server.serve_one(); });
 
-    if (!WaitNamedPipeW(owb::ipc::kPipeName, 3000)) {
+    if (!WaitNamedPipeW(kTestPipeName, 3000)) {
         t.join();
         GTEST_SKIP() << "Pipe not available";
     }
 
-    HANDLE pipe = CreateFileW(owb::ipc::kPipeName,
+    HANDLE pipe = CreateFileW(kTestPipeName,
         GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     if (pipe == INVALID_HANDLE_VALUE) { t.join(); GTEST_SKIP(); }
 
@@ -127,8 +147,8 @@ public:
 class PipeClient {
 public:
     PipeClient() {
-        if (!WaitNamedPipeW(owb::ipc::kPipeName, 3000)) return;
-        pipe_ = CreateFileW(owb::ipc::kPipeName, GENERIC_READ | GENERIC_WRITE,
+        if (!WaitNamedPipeW(kTestPipeName, 3000)) return;
+        pipe_ = CreateFileW(kTestPipeName, GENERIC_READ | GENERIC_WRITE,
                             0, nullptr, OPEN_EXISTING, 0, nullptr);
     }
     ~PipeClient() { close(); }
@@ -191,7 +211,7 @@ private:
 } // namespace
 
 TEST(IpcServer, MultipleMessagesOnOneConnection) {
-    owb::IpcServer server;
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -211,7 +231,7 @@ TEST(IpcServer, MultipleMessagesOnOneConnection) {
 
 TEST(IpcServer, SetCodec_MapsAllGuiCodecNames) {
     FakeCodecController fake;
-    owb::IpcServer server(nullptr, nullptr, &fake);
+    owb::IpcServer server(nullptr, nullptr, &fake, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -245,7 +265,7 @@ TEST(IpcServer, SetCodec_MapsAllGuiCodecNames) {
 
 TEST(IpcServer, SetCodec_ShortPayloadIsRejectedAndSessionContinues) {
     FakeCodecController fake;
-    owb::IpcServer server(nullptr, nullptr, &fake);
+    owb::IpcServer server(nullptr, nullptr, &fake, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -271,7 +291,7 @@ TEST(IpcServer, SetCodec_ShortPayloadIsRejectedAndSessionContinues) {
 
 TEST(IpcServer, SetCodec_ParamDoesNotRebuildCodec) {
     FakeCodecController fake;
-    owb::IpcServer server(nullptr, nullptr, &fake);
+    owb::IpcServer server(nullptr, nullptr, &fake, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -292,7 +312,7 @@ TEST(IpcServer, SetCodec_ParamDoesNotRebuildCodec) {
 
 TEST(IpcServer, SetCodec_BitpoolIsClampedToA2dpRange) {
     FakeCodecController fake;
-    owb::IpcServer server(nullptr, nullptr, &fake);
+    owb::IpcServer server(nullptr, nullptr, &fake, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -312,7 +332,7 @@ TEST(IpcServer, SetCodec_BitpoolIsClampedToA2dpRange) {
 TEST(IpcServer, GetStatus_ReportsControllerBitrate) {
     FakeCodecController fake;
     fake.reported_bitrate = 327993;
-    owb::IpcServer server(nullptr, nullptr, &fake);
+    owb::IpcServer server(nullptr, nullptr, &fake, test_pipe());
     ASSERT_TRUE(server.start());
     std::thread t([&server] { server.serve_one(); });
 
@@ -328,4 +348,127 @@ TEST(IpcServer, GetStatus_ReportsControllerBitrate) {
     ASSERT_TRUE(ok);
     EXPECT_EQ(status.bitrate, 327993u);
     EXPECT_STREQ(status.codec_name, "SBC");
+}
+
+namespace {
+
+constexpr auto kStopDeadline = std::chrono::seconds(2);
+
+bool wait_until_set(const std::atomic<bool>& flag, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!flag && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return flag;
+}
+
+// Unblocks a serve_one() that stop() failed to release so the test can still join.
+void rescue_blocked_server(std::thread& serve_thread) {
+    CancelSynchronousIo(serve_thread.native_handle());
+    PipeClient unblocker;
+}
+
+bool stop_releases_server(owb::IpcServer& server, std::thread& serve_thread,
+                          const std::atomic<bool>& serve_returned) {
+    std::atomic<bool> stop_returned{false};
+    std::thread stop_thread([&] { server.stop(); stop_returned = true; });
+
+    const bool released = wait_until_set(serve_returned, kStopDeadline)
+                       && wait_until_set(stop_returned, kStopDeadline);
+    if (!released) rescue_blocked_server(serve_thread);
+    serve_thread.join();
+    stop_thread.join();
+    return released;
+}
+
+bool is_process_elevated() {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION elevation{};
+    DWORD size = 0;
+    const BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+    CloseHandle(token);
+    return ok && elevation.TokenIsElevated != 0;
+}
+
+std::wstring read_pipe_dacl(const wchar_t* name) {
+    HANDLE pipe = CreateFileW(name, READ_CONTROL, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) return {};
+
+    PSECURITY_DESCRIPTOR descriptor = nullptr;
+    const DWORD rc = GetSecurityInfo(pipe, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION,
+                                     nullptr, nullptr, nullptr, nullptr, &descriptor);
+    CloseHandle(pipe);
+    if (rc != ERROR_SUCCESS) return {};
+
+    LPWSTR sddl = nullptr;
+    std::wstring result;
+    if (ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor, SDDL_REVISION_1, DACL_SECURITY_INFORMATION, &sddl, nullptr)) {
+        result = sddl;
+        LocalFree(sddl);
+    }
+    LocalFree(descriptor);
+    return result;
+}
+
+} // namespace
+
+TEST(IpcServer, StopUnblocksPendingServeOne) {
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());
+    ASSERT_TRUE(server.start());
+
+    std::atomic<bool> serve_returned{false};
+    std::thread serve_thread([&] { server.serve_one(); serve_returned = true; });
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    EXPECT_TRUE(stop_releases_server(server, serve_thread, serve_returned))
+        << "stop() did not release serve_one() within 2 s";
+}
+
+TEST(IpcServer, StopUnblocksServeOneDuringSession) {
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe());
+    ASSERT_TRUE(server.start());
+
+    std::atomic<bool> serve_returned{false};
+    std::thread serve_thread([&] { server.serve_one(); serve_returned = true; });
+
+    PipeClient client;
+    ASSERT_TRUE(client.is_open());
+    owb::ipc::StatusPayload status{};
+    ASSERT_TRUE(client.get_status(status));
+
+    EXPECT_TRUE(stop_releases_server(server, serve_thread, serve_returned))
+        << "stop() did not release a session waiting for the next message";
+}
+
+TEST(IpcServer, SecondServerInstanceFails) {
+    owb::IpcServer first(nullptr, nullptr, nullptr, test_pipe());
+    ASSERT_TRUE(first.start());
+
+    owb::IpcServer second(nullptr, nullptr, nullptr, test_pipe());
+    EXPECT_FALSE(second.start());
+}
+
+TEST(IpcServer, PipeIsCreatedWithConfiguredDacl) {
+    const owb::IpcPipeConfig readable_by_owner{
+        kTestPipeName, std::wstring(owb::kIpcPipeSddl) + L"(A;;GR;;;OW)" };
+    owb::IpcServer server(nullptr, nullptr, nullptr, readable_by_owner);
+    ASSERT_TRUE(server.start());
+
+    EXPECT_EQ(read_pipe_dacl(kTestPipeName), L"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;OW)");
+}
+
+TEST(IpcServer, PipeRejectsNonElevatedClient) {
+    if (is_process_elevated()) GTEST_SKIP() << "Needs a non-elevated process";
+
+    owb::IpcServer server(nullptr, nullptr, nullptr, test_pipe_with_production_dacl());
+    ASSERT_TRUE(server.start());
+
+    HANDLE pipe = CreateFileW(kTestPipeName, GENERIC_READ | GENERIC_WRITE,
+                              0, nullptr, OPEN_EXISTING, 0, nullptr);
+    const DWORD err = GetLastError();
+    if (pipe != INVALID_HANDLE_VALUE) CloseHandle(pipe);
+
+    EXPECT_EQ(pipe, INVALID_HANDLE_VALUE);
+    EXPECT_EQ(err, static_cast<DWORD>(ERROR_ACCESS_DENIED));
 }
