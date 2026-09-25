@@ -12,19 +12,9 @@ public sealed class DriverInstallerService : IDriverInstaller
         {
             try
             {
-                using var proc = Process.Start(new ProcessStartInfo
-                {
-                    FileName               = "pnputil.exe",
-                    Arguments              = "/enum-drivers",
-                    RedirectStandardOutput = true,
-                    UseShellExecute        = false,
-                    CreateNoWindow         = true,
-                });
-                var output = proc?.StandardOutput.ReadToEnd() ?? string.Empty;
-                proc?.WaitForExit(5_000);
-                var installed = output.Contains("owb_a2dp.inf", StringComparison.OrdinalIgnoreCase);
-                OWBLogger.Info($"IsInstalled check → {installed}");
-                return installed;
+                var publishedNames = OwbDriverStore.FindPublishedNames();
+                OWBLogger.Info($"IsInstalled check → {publishedNames.Count > 0} ({string.Join(", ", publishedNames)})");
+                return publishedNames.Count > 0;
             }
             catch (Exception ex)
             {
@@ -37,25 +27,15 @@ public sealed class DriverInstallerService : IDriverInstaller
     public void Install(string infPath)
     {
         OWBLogger.Info($"Installing driver from: {infPath}");
-        Process.Start(new ProcessStartInfo
-        {
-            FileName        = "pnputil.exe",
-            Arguments       = $"/add-driver \"{infPath}\" /install",
-            Verb            = "runas",
-            UseShellExecute = true,
-        });
+        var result = OwbDriverStore.Add(infPath);
+        OWBLogger.Info($"pnputil /add-driver → exit={result.ExitCode}\n{result.Output.Trim()}");
     }
 
     public void Rollback()
     {
         OWBLogger.Info("Rolling back owb_a2dp driver");
-        Process.Start(new ProcessStartInfo
-        {
-            FileName        = "pnputil.exe",
-            Arguments       = "/delete-driver owb_a2dp.inf /uninstall /force",
-            Verb            = "runas",
-            UseShellExecute = true,
-        });
+        if (OwbDriverStore.Remove().Count == 0)
+            OWBLogger.Warn($"Rollback: no {OwbDriverStore.InfName} package in the driver store");
     }
 
     public void DisableHfpProfile()

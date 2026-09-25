@@ -8,7 +8,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using WpfApp = System.Windows.Application;
 using WpfMsg = System.Windows.MessageBox;
@@ -34,8 +33,8 @@ public partial class DevicesViewModel : ObservableObject
 {
     private readonly IIpcSender _ipc;
 
-    // A2DP profile devices keyed by MAC without colons (AABBCCDDEEFF), uppercase.
-    private Dictionary<string, A2dpInfo> _a2dpCache = [];
+    private IReadOnlyDictionary<string, A2dpDriverBinding> _a2dpCache =
+        new Dictionary<string, A2dpDriverBinding>();
 
     public ObservableCollection<BluetoothDeviceInfo> Devices { get; } = new();
 
@@ -238,8 +237,7 @@ public partial class DevicesViewModel : ObservableObject
 
                 _a2dpCache.TryGetValue(addrKey, out var a2dp);
                 var drvStatus = BuildDriverStatus(a2dp);
-                var usesOwb   = a2dp?.DriverInf.Contains("owb_a2dp",
-                                    StringComparison.OrdinalIgnoreCase) == true;
+                var usesOwb   = a2dp?.UsesOwbDriver == true;
 
                 OWBLogger.Info($"  Device: name='{displayName}' addr={addr} type={typeLabel} audio={isAudio} driver='{drvStatus}' owb={usesOwb}");
 
@@ -318,51 +316,8 @@ public partial class DevicesViewModel : ObservableObject
             }
 
             OWBLogger.Info($"InstallDriver: inf='{infPath}'");
-
-            var logFile = Path.Combine(Path.GetTempPath(), "owb_install.log");
-            var batFile = Path.Combine(Path.GetTempPath(), "owb_install.bat");
-            File.WriteAllText(batFile,
-                $"@echo off\r\npnputil.exe /add-driver \"{infPath}\" /install > \"{logFile}\" 2>&1\r\n");
-
-            var proc = Process.Start(new ProcessStartInfo
-            {
-                FileName        = "cmd.exe",
-                Arguments       = $"/c \"{batFile}\"",
-                Verb            = "runas",
-                UseShellExecute = true,
-            });
-
-            StatusMessage = $"Instalando driver… (espera UAC)";
-            OWBLogger.Info("InstallDriver: pnputil process launched, waiting for UAC approval");
-
-            Task.Run(() =>
-            {
-                proc?.WaitForExit(30_000);
-                var exitCode = proc?.ExitCode ?? -1;
-                var log = File.Exists(logFile) ? File.ReadAllText(logFile).Trim() : string.Empty;
-
-                OWBLogger.Info($"InstallDriver: pnputil exitCode={exitCode}");
-                if (!string.IsNullOrEmpty(log))
-                    OWBLogger.Info($"InstallDriver pnputil output:\n{log}");
-
-                OWBLogger.Info("InstallDriver: running ForceActivate");
-                ForceActivateA2dp(infPath);
-
-                var registered = exitCode == 0
-                    || log.Contains("correctamente", StringComparison.OrdinalIgnoreCase)
-                    || log.Contains("ya existe",     StringComparison.OrdinalIgnoreCase)
-                    || log.Contains("successfully",  StringComparison.OrdinalIgnoreCase);
-
-                OWBLogger.Info($"InstallDriver: registered={registered}");
-
-                WpfApp.Current.Dispatcher.Invoke(() =>
-                {
-                    StatusMessage = registered
-                        ? "Driver registrado. Reconecta los auriculares para que Windows lo aplique."
-                        : $"Error al registrar driver (código {exitCode}). Ver log: {OWBLogger.LogFilePath}";
-                    RefreshCommand.Execute(null);
-                });
-            });
+            StatusMessage = "Instalando driver…";
+            Task.Run(() => InstallAndActivate(infPath));
         }
         catch (Exception ex)
         {
@@ -371,6 +326,45 @@ public partial class DevicesViewModel : ObservableObject
         }
     }
     private bool CanInstall() => SelectedDevice?.IsAudio == true;
+
+    private void InstallAndActivate(string infPath)
+    {
+        try
+        {
+            var result = OwbDriverStore.Add(infPath);
+            OWBLogger.Info($"InstallDriver: pnputil exitCode={result.ExitCode}");
+            if (!string.IsNullOrWhiteSpace(result.Output))
+                OWBLogger.Info($"InstallDriver pnputil output:\n{result.Output.Trim()}");
+
+            var activation = PnpDriverActivator.ForceOnA2dpSinks(infPath);
+            OWBLogger.Info($"InstallDriver: ForceActivate ok={activation.Succeeded} reboot={activation.RebootRequired} error={activation.Win32Error}");
+
+            var registered = IsDriverRegistered(result);
+            OWBLogger.Info($"InstallDriver: registered={registered}");
+            ShowAfterRefresh(registered
+                ? "Driver registrado. Reconecta los auriculares para que Windows lo aplique."
+                : $"Error al registrar driver (código {result.ExitCode}). Ver log: {OWBLogger.LogFilePath}");
+        }
+        catch (Exception ex)
+        {
+            OWBLogger.Error(ex, "InstallDriver");
+            ShowAfterRefresh($"Error: {ex.Message}");
+        }
+    }
+
+    private static bool IsDriverRegistered(PnputilResult result) =>
+        result.Succeeded
+        || result.Output.Contains("correctamente", StringComparison.OrdinalIgnoreCase)
+        || result.Output.Contains("ya existe",     StringComparison.OrdinalIgnoreCase)
+        || result.Output.Contains("successfully",  StringComparison.OrdinalIgnoreCase);
+
+    // Refresh rewrites StatusMessage, so the operation result is set after it.
+    private void ShowAfterRefresh(string message) =>
+        WpfApp.Current.Dispatcher.Invoke(() =>
+        {
+            RefreshCommand.Execute(null);
+            StatusMessage = message;
+        });
 
     [RelayCommand]
     private void EnableTestSigning()
@@ -420,132 +414,56 @@ public partial class DevicesViewModel : ObservableObject
     private void ResetDriver()
     {
         if (SelectedDevice is null) return;
-        OWBLogger.Info($"ResetDriver: removing owb_a2dp.inf for device='{SelectedDevice.Name}'");
+        var device = SelectedDevice.Name;
+        OWBLogger.Info($"ResetDriver: removing {OwbDriverStore.InfName} for device='{device}'");
+        StatusMessage = $"Restaurando driver de Windows para {device}…";
+        Task.Run(() => RemoveOwbDriver(device));
+    }
+    private bool CanReset() => SelectedDevice?.IsAudio == true;
+
+    private void RemoveOwbDriver(string device)
+    {
         try
         {
-            var proc = Process.Start(new ProcessStartInfo
-            {
-                FileName        = "pnputil.exe",
-                Arguments       = "/delete-driver owb_a2dp.inf /uninstall /force",
-                Verb            = "runas",
-                UseShellExecute = true,
-            });
-            StatusMessage = $"Restaurando driver de Windows para {SelectedDevice.Name}…";
-            Task.Run(() =>
-            {
-                proc?.WaitForExit(15_000);
-                OWBLogger.Info($"ResetDriver: pnputil exitCode={proc?.ExitCode}");
-                WpfApp.Current.Dispatcher.Invoke(() => RefreshCommand.Execute(null));
-            });
+            ShowAfterRefresh(DescribeResetResult(OwbDriverStore.Remove(), device));
         }
         catch (Exception ex)
         {
             OWBLogger.Error(ex, "ResetDriver");
-            StatusMessage = $"Error al restaurar: {ex.Message}";
+            ShowAfterRefresh($"Error al restaurar: {ex.Message}");
         }
     }
-    private bool CanReset() => SelectedDevice?.IsAudio == true;
 
-    // ── Force-activate via Win32 UpdateDriverForPlugAndPlayDevicesW ───────────
-    // Runs elevated to override WHQL driver ranking for all A2DP Sink devices.
-    private static void ForceActivateA2dp(string infPath)
+    public static string DescribeResetResult(IReadOnlyList<PnputilResult> results, string device)
     {
-        const string script = """
-            param([string]$InfPath)
-            Add-Type -TypeDefinition @'
-            using System; using System.Runtime.InteropServices;
-            public class PnpForcer {
-                [DllImport("newdev.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-                public static extern bool UpdateDriverForPlugAndPlayDevicesW(
-                    IntPtr h, string hwId, string inf, uint flags, out bool reboot);
-            }
-            '@
-            $r = $false
-            $ok = [PnpForcer]::UpdateDriverForPlugAndPlayDevicesW(
-                [IntPtr]::Zero,
-                'BTHENUM\{0000110b-0000-1000-8000-00805f9b34fb}',
-                $InfPath, 1, [ref]$r)
-            Write-Host "ForceActivate: ok=$ok reboot=$r"
-            if ($r) { Write-Host "Reinicio requerido para activar el driver." }
-            """;
-
-        var psPath = Path.Combine(Path.GetTempPath(), "owb_force_a2dp.ps1");
-        File.WriteAllText(psPath, script);
-
-        Process.Start(new ProcessStartInfo
-        {
-            FileName        = "powershell.exe",
-            Arguments       = $"-NoProfile -ExecutionPolicy Bypass -File \"{psPath}\" -InfPath \"{infPath}\"",
-            Verb            = "runas",
-            UseShellExecute = true,
-        })?.WaitForExit(20_000);
+        if (results.Count == 0)
+            return $"No se encontró {OwbDriverStore.InfName} en el almacén de drivers: no había nada que quitar.";
+        var failed = results.FirstOrDefault(r => !r.Succeeded);
+        return failed is null
+            ? $"Driver de Windows restaurado para {device}. Reinicia o reconecta los auriculares para completar."
+            : $"Error al quitar el driver OpenWinBlue (pnputil código {failed.ExitCode}). Revisa el registro.";
     }
 
     // ── A2DP device enumeration via pnputil ───────────────────────────────────
-    private static Dictionary<string, A2dpInfo> QueryA2dpDevices()
+    private static IReadOnlyDictionary<string, A2dpDriverBinding> QueryA2dpDevices()
     {
-        const string a2dpUuid = "0000110b-0000-1000-8000-00805f9b34fb";
-        var result = new Dictionary<string, A2dpInfo>(StringComparer.OrdinalIgnoreCase);
-
-        string output;
         try
         {
-            using var proc = Process.Start(new ProcessStartInfo
-            {
-                FileName               = "pnputil.exe",
-                Arguments              = "/enum-devices /ids",
-                RedirectStandardOutput = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true,
-            });
-            output = proc?.StandardOutput.ReadToEnd() ?? string.Empty;
-            proc?.WaitForExit(5_000);
+            var devices = PnputilParser.ParseDeviceDrivers(PnputilRunner.Run("/enum-devices", "/ids").Output);
+            return A2dpDriverMap.Build(devices, OwbDriverStore.FindPublishedNames());
         }
-        catch { return result; }
-
-        // Split into per-device blocks separated by blank lines.
-        var blocks = output.Split(
-            ["\r\n\r\n", "\n\n"],
-            StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var block in blocks)
+        catch (Exception ex)
         {
-            if (!block.Contains(a2dpUuid, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            string? instanceId = null;
-            string? driverInf  = null;
-
-            foreach (var raw in block.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
-            {
-                var colon = raw.IndexOf(':');
-                if (colon < 0) continue;
-                var value = raw[(colon + 1)..].Trim();
-
-                if (value.Contains(a2dpUuid, StringComparison.OrdinalIgnoreCase))
-                    instanceId = value;
-                else if (value.EndsWith(".inf", StringComparison.OrdinalIgnoreCase))
-                    driverInf = value;
-            }
-
-            if (instanceId is null) continue;
-
-            // Extract 12-char MAC segment from instance ID: ...LOCALADDR REMOTEADDR _C0xxxxxx
-            var m = Regex.Match(instanceId, @"([0-9A-Fa-f]{12})_C0", RegexOptions.None);
-            if (!m.Success) continue;
-
-            var mac = m.Groups[1].Value.ToUpperInvariant();
-            result[mac] = new A2dpInfo(instanceId, driverInf ?? string.Empty);
+            OWBLogger.Error(ex, "QueryA2dpDevices");
+            return new Dictionary<string, A2dpDriverBinding>();
         }
-
-        return result;
     }
 
-    private static string BuildDriverStatus(A2dpInfo? a2dp)
+    private static string BuildDriverStatus(A2dpDriverBinding? a2dp)
     {
         if (a2dp is null)
             return "Sin perfil A2DP activo";
-        if (a2dp.DriverInf.Contains("owb_a2dp", StringComparison.OrdinalIgnoreCase))
+        if (a2dp.UsesOwbDriver)
             return "OpenWinBlue instalado ✓";
         return string.IsNullOrEmpty(a2dp.DriverInf)
             ? "Driver desconocido"
@@ -642,9 +560,6 @@ public partial class DevicesViewModel : ObservableObject
 
         return [.. res];
     }
-
-    // Pnputil-derived A2DP profile device info (internal only).
-    private sealed record A2dpInfo(string InstanceId, string DriverInf);
 
     private sealed class NullIpcSender : IIpcSender
     {
