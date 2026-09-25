@@ -19,6 +19,8 @@
 #  include <stddef.h>
 #endif
 
+#include "owb_codec_ids.h"
+
 // Custom device type for OpenWinBlue IOCTLs (0x8000–0xFFFF = vendor range)
 #define OWB_DEVICE_TYPE  0x8000u
 
@@ -51,15 +53,6 @@
 // ─── Payload structures ───────────────────────────────────────────────────────
 
 #pragma pack(push, 1)
-
-// Codec IDs — matches owb::ipc::SetCodecPayload.codec_name convention
-#define OWB_CODEC_SBC    0u
-#define OWB_CODEC_LDAC   1u
-#define OWB_CODEC_APTX   2u
-#define OWB_CODEC_APTXHD 3u
-#define OWB_CODEC_AAC              4u
-#define OWB_CODEC_LC3              5u
-#define OWB_CODEC_APTX_ADAPTIVE    6u
 
 // Input for OWB_IOCTL_SEND_AUDIO_FRAME.
 // data[] holds exactly data_len bytes of encoded audio (SBC frame, LDAC frame, etc.)
