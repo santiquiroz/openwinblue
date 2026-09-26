@@ -11,6 +11,11 @@ on:
         description: "Tag existente a compilar (p. ej. v0.4.0-beta)"
         required: true
 
+# El GITHUB_TOKEN por defecto del repo es de solo lectura: sin esto, crear o
+# actualizar la release falla con "Resource not accessible by integration".
+permissions:
+  contents: write
+
 jobs:
   build-release:
     name: Build Release
