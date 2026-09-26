@@ -4,8 +4,6 @@
 #include <windows.h>
 #include <objbase.h>
 #include <crtdbg.h>
-#include <mftransform.h>
-#include <wmcodecdsp.h>
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdint>
@@ -26,15 +24,6 @@ public:
 private:
     HRESULT hr_;
 };
-
-// Windows Server images without Media Foundation lack the encoder; skip rather than fail.
-bool aac_encoder_registered() {
-    IMFTransform* mft = nullptr;
-    const HRESULT hr = CoCreateInstance(__uuidof(AACMFTEncoder), nullptr, CLSCTX_INPROC_SERVER,
-                                        IID_IMFTransform, reinterpret_cast<void**>(&mft));
-    if (SUCCEEDED(hr)) mft->Release();
-    return hr != REGDB_E_CLASSNOTREG;
-}
 
 std::vector<int16_t> sine_frame(int freq) {
     std::vector<int16_t> pcm(kFrameSamples);
@@ -122,8 +111,8 @@ TEST(CodecAac, EncodeDoesNotCrash) {
 
 TEST(CodecAac, OutputIsLatm) {
     ComScope com;
-    if (!aac_encoder_registered()) GTEST_SKIP() << "MF AAC encoder not registered";
     owb::CodecAac codec;
+    if (!codec.encoder_ready()) GTEST_SKIP() << "MF AAC encoder unavailable";
     const auto packet = first_encoded_packet(codec, 44100);
     ASSERT_FALSE(packet.empty()) << "MF AAC encoder produced no output";
     ASSERT_GE(packet.size(), 7u);
@@ -141,8 +130,8 @@ TEST(CodecAac, OutputIsLatm) {
 
 TEST(CodecAac, OutputCarriesNewConfigAfterFreqChange) {
     ComScope com;
-    if (!aac_encoder_registered()) GTEST_SKIP() << "MF AAC encoder not registered";
     owb::CodecAac codec;
+    if (!codec.encoder_ready()) GTEST_SKIP() << "MF AAC encoder unavailable";
     ASSERT_TRUE(codec.set_param({"freq", 48000}));
     const auto packet = first_encoded_packet(codec, 48000);
     ASSERT_FALSE(packet.empty()) << "MF AAC encoder produced no output";

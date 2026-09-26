@@ -21,6 +21,9 @@ public:
     bool                   set_param(CodecParam param)           override;
     std::optional<int64_t> get_param(std::string_view key) const override;
 
+    // False when Media Foundation has no usable AAC encoder on this machine.
+    bool                   encoder_ready() const noexcept;
+
 private:
     void start_mf_encoder();
     bool init_mf_encoder();

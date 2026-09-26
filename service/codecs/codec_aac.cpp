@@ -197,6 +197,8 @@ bool CodecAac::init_mf_encoder() {
 
 std::string_view CodecAac::name() const noexcept { return "AAC"; }
 
+bool CodecAac::encoder_ready() const noexcept { return impl_ != nullptr; }
+
 std::ptrdiff_t CodecAac::encode(std::span<const int16_t> input,
                                  std::span<uint8_t>       output) {
     if (!impl_ || !impl_->mft) return -1;
