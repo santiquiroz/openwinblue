@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Recompila un tag ya publicado con esta versión del workflow y sube los assets a su release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag existente a compilar (p. ej. v0.4.0-beta)"
+        required: true
 
 jobs:
   build-release:
@@ -12,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref }}
           submodules: recursive
 
       - name: Setup .NET 10
@@ -57,12 +64,17 @@ jobs:
           Copy-Item $exe.FullName (Join-Path $dst "owb_service.exe") -Force
         shell: pwsh
 
+      # sign-driver.ps1 copia el .sys a OutDir: con OutDir == carpeta del .sys, Copy-Item
+      # falla ("cannot overwrite the item with itself"). Se firma en una subcarpeta y se
+      # copia el paquete firmado donde lo espera el wixproj (DriverBuildDir).
       - name: Test-sign driver and assemble package
         run: |
           pwsh tools/sign-driver.ps1 `
             -InfPath driver/owb_a2dp.inf `
             -SysPath driver/x64/Release/owb_a2dp.sys `
-            -OutDir driver/x64/Release
+            -OutDir driver/x64/Release/signed
+          if ($LASTEXITCODE -ne 0) { throw "sign-driver.ps1 failed (exit $LASTEXITCODE)" }
+          Copy-Item driver/x64/Release/signed/* driver/x64/Release -Force
         shell: pwsh
 
       - name: Build installer
@@ -72,6 +84,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
             installer/bin/x64/Release/OpenWinBlue-Setup.msi
             build/release/service/owb_service.exe
