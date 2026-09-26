@@ -131,6 +131,17 @@ target_compile_options(owb_codec_factory PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 
+# ── Logger de archivo (compartido por todos los componentes del servicio) ────
+add_library(owb_log STATIC
+    src/owb_log.cpp
+)
+target_include_directories(owb_log PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_options(owb_log PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+
 # ── HFP Guard static library ─────────────────────────────────────────────────
 add_library(owb_hfp_guard STATIC
     src/hfp_guard.cpp
@@ -142,6 +153,7 @@ target_compile_options(owb_hfp_guard PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_hfp_guard PUBLIC
+    owb_log
     ole32 oleaut32 uuid Mmdevapi
 )
 
@@ -158,7 +170,7 @@ target_compile_options(owb_ipc_server PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
 )
 target_link_libraries(owb_ipc_server PUBLIC
-    owb_ai_pipeline
+    owb_ai_pipeline owb_log
     advapi32   # ConvertStringSecurityDescriptorToSecurityDescriptorW
 )
 
@@ -172,6 +184,9 @@ target_include_directories(owb_a2dp_stream PUBLIC
 )
 target_compile_options(owb_a2dp_stream PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /utf-8>
+)
+target_link_libraries(owb_a2dp_stream PUBLIC
+    owb_log
 )
 
 # ── Stream pipeline (capture → AI → codec → driver orchestrator) ─────────────
@@ -206,7 +221,7 @@ target_compile_options(owb_service PRIVATE
 target_link_libraries(owb_service PRIVATE
     owb_stream_pipeline
     owb_codec_factory owb_codec_lc3 owb_codec_aac owb_hfp_guard owb_ipc_server owb_a2dp_stream
-    owb_ai_pipeline
+    owb_ai_pipeline owb_log
     ole32 oleaut32 uuid Mmdevapi advapi32
 )
 

@@ -79,6 +79,23 @@
                 KeyPath="yes"/>
         </Component>
 
+        <?ifdef OnnxDir ?>
+        <!-- ONNX Runtime + DirectML: requeridos por owb-service.exe cuando se
+             compila con el pipeline AI real (DeepFilterNet3). -->
+        <Component Id="OnnxRuntimeDll" Guid="1A2B3C4D-5E6F-7081-92A3-B4C5D6E7F809" Bitness="always64">
+          <File Id="onnxruntime_dll" Name="onnxruntime.dll"
+                Source="$(OnnxDir)\onnxruntime.dll" KeyPath="yes"/>
+        </Component>
+        <Component Id="OnnxProvidersSharedDll" Guid="2B3C4D5E-6F70-8192-A3B4-C5D6E7F8091A" Bitness="always64">
+          <File Id="onnxruntime_providers_shared_dll" Name="onnxruntime_providers_shared.dll"
+                Source="$(OnnxDir)\onnxruntime_providers_shared.dll" KeyPath="yes"/>
+        </Component>
+        <Component Id="DirectMlDll" Guid="3C4D5E6F-7081-92A3-B4C5-D6E7F8091A2B" Bitness="always64">
+          <File Id="directml_dll" Name="DirectML.dll"
+                Source="$(OnnxDir)\DirectML.dll" KeyPath="yes"/>
+        </Component>
+        <?endif?>
+
         <!-- .sys va junto con .inf y .cat para que pnputil los encuentre todos en el mismo dir -->
         <Component Id="DriverSys" Guid="D4E5F6A7-B8C9-0123-DEF0-234567890123" Bitness="always64">
           <File Id="owb_a2dp_sys" Name="owb_a2dp.sys"
@@ -115,6 +132,11 @@
       <ComponentRef Id="TestCert"/>
       <ComponentRef Id="DriverSys"/>
       <ComponentRef Id="DesktopShortcut"/>
+      <?ifdef OnnxDir ?>
+      <ComponentRef Id="OnnxRuntimeDll"/>
+      <ComponentRef Id="OnnxProvidersSharedDll"/>
+      <ComponentRef Id="DirectMlDll"/>
+      <?endif?>
     </Feature>
 
     <!-- Texto de progreso visible en la barra del instalador -->

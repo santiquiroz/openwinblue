@@ -11,6 +11,7 @@
 #include "codec_controller.h"
 #include "owb_ioctl.h"
 #include "../ai/ai_pipeline.h"
+#include "owb_log.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -357,15 +358,18 @@ IpcServer::~IpcServer() { stop(); }
 bool IpcServer::start() {
     if (impl_->running) return true;
     if (!impl_->open_pipe()) {
+        OWB_LOG_ERROR("IPC pipe creation failed: %lu", GetLastError());
         impl_->close_handles();
         return false;
     }
     impl_->running = true;
+    OWB_LOG_INFO("IPC server started");
     return true;
 }
 
 void IpcServer::stop() {
     if (!impl_->running.exchange(false)) return;
+    OWB_LOG_INFO("IPC server stopping");
     SetEvent(impl_->stop_event);
     impl_->wait_until_idle();
     impl_->close_handles();
@@ -376,6 +380,7 @@ bool IpcServer::serve_one() {
     if (!scope.entered() || !connect_client(impl_->io()))
         return false;
 
+    OWB_LOG_DEBUG("IPC client connected");
     // The session lasts until the client closes its end, sends garbage or stop() is called.
     impl_->serve_session();
     return true;

@@ -12,22 +12,28 @@ param(
     [Parameter(Mandatory = $true)] [string] $InfPath,
     [Parameter(Mandatory = $true)] [string] $SysPath,
     [Parameter(Mandatory = $true)] [string] $OutDir,
-    [string] $CertSubject = 'CN=OpenWinBlue Test Certificate'
+    [string] $CertSubject = 'CN=OpenWinBlue Test Certificate',
+    # Raiz bin del WDK/EWDK (ej: F:\Program Files\Windows Kits\10\bin) para
+    # maquinas sin WDK instalado que compilan con el EWDK montado.
+    [string] $WdkBinRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
 function Find-WdkTool([string]$name) {
     $roots = @(
+        $script:WdkBinRoot,
         "${env:ProgramFiles(x86)}\Windows Kits\10\bin",
         "${env:ProgramFiles}\Windows Kits\10\bin"
-    )
-    foreach ($root in $roots) {
-        if (-not (Test-Path $root)) { continue }
-        $hit = Get-ChildItem -Path $root -Recurse -Filter $name -ErrorAction SilentlyContinue |
-               Where-Object { $_.FullName -match '\\x64\\' } |
-               Sort-Object FullName -Descending | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
+    ) | Where-Object { $_ }
+    foreach ($arch in @('\\x64\\', '\\x86\\')) {   # inf2cat solo existe en x86
+        foreach ($root in $roots) {
+            if (-not (Test-Path $root)) { continue }
+            $hit = Get-ChildItem -Path $root -Recurse -Filter $name -ErrorAction SilentlyContinue |
+                   Where-Object { $_.FullName -match $arch } |
+                   Sort-Object FullName -Descending | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        }
     }
     return $null
 }

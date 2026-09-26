@@ -4,7 +4,11 @@
 #include "deep_filter.h"
 
 #if OWB_HAVE_ONNXRUNTIME
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #include <onnxruntime_cxx_api.h>
+#include <dml_provider_factory.h>
 #include <vector>
 #include <string>
 #include <cstring>
